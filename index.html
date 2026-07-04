@@ -81,23 +81,31 @@ function meaningTokens(koArr){
   }));
   return t;
 }
-function matchToken(a, toks){
-  if(toks.has(a)) return true;
+function matchToken(a, toks){ // "exact" | "fuzzy" | false
+  if(toks.has(a)) return "exact";
   const sa = stem(a);
-  if(sa!==a && toks.has(sa)) return true;
+  if(sa!==a && toks.has(sa)) return "fuzzy";
   for(const t of toks){
     if(t.length<2 || a.length<2) continue;
-    if(sa===stem(t)) return true;
-    if(t.includes(a) && a.length/t.length>=0.5) return true;
-    if(a.includes(t) && t.length/a.length>=0.6) return true;
+    if(sa===stem(t)) return "fuzzy";
+    if(t.includes(a) && a.length/t.length>=0.5) return "fuzzy";
+    if(a.includes(t) && t.length/a.length>=0.6) return "fuzzy";
   }
   return false;
 }
+/* 반환: {correct, review} — review=true면 사람/AI 감수 대상 */
 function autoGrade(ko, ans){
   const parts = (ans||"").split(/[,;\/·]/).map(norm).filter(Boolean);
-  if(!parts.length) return false;
+  if(!parts.length) return { correct:false, review:false };
   const toks = meaningTokens(ko);
-  return parts.some(a => matchToken(a, toks));
+  let fuzzy = false;
+  for(const a of parts){
+    const m = matchToken(a, toks);
+    if(m==="exact") return { correct:true, review:false };
+    if(m==="fuzzy") fuzzy = true;
+  }
+  if(fuzzy) return { correct:true, review:true };
+  return { correct:false, review: parts.join("").length>=2 };
 }
 
 /* ================= 유틸 ================= */
@@ -219,7 +227,7 @@ window.nav = function(d){
   S.answers[S.idx] = document.getElementById("ans").value;
   const nx = S.idx + d;
   if(nx >= S.queue.length){
-    S.graded = S.queue.map((q,i)=>({ ...q, answer:S.answers[i], correct:autoGrade(q.ko, S.answers[i]) }));
+    S.graded = S.queue.map((q,i)=>{ const g = autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
     reviewScreen();
     return;
   }
@@ -231,7 +239,7 @@ function reviewScreen(){
     <tr>
       <td><b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span></td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
-      <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}</td>
+      <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="감수 대상">⚠️</span>':''}</td>
       <td><button class="btn-ghost btn-sm" onclick="flip(${i})">수정</button></td>
     </tr>`).join("");
   const c = S.graded.filter(g=>g.correct).length;
@@ -244,7 +252,7 @@ function reviewScreen(){
      <button class="btn-primary" style="margin-top:14px" onclick="submitResult()">결과 저장</button>
    </div>`;
 }
-window.flip = function(i){ S.graded[i].correct = !S.graded[i].correct; reviewScreen(); };
+window.flip = function(i){ S.graded[i].correct = !S.graded[i].correct; S.graded[i].review = false; reviewScreen(); };
 
 window.submitResult = async function(){
   app.innerHTML = `<div class="card"><h2>저장 중...</h2></div>`;
@@ -257,7 +265,7 @@ window.submitResult = async function(){
   if(e1) err(e1);
   const { error: e2 } = await sb.from("attempt_items").insert(S.graded.map((g,i)=>({
     attempt_id: att.id, word_id: g.word_id, en: g.en, unit: g.unit,
-    item_type: g.type, answer: g.answer, correct: g.correct, seq: i
+    item_type: g.type, answer: g.answer, correct: g.correct, needs_review: g.review, seq: i
   })));
   if(e2) err(e2);
   app.innerHTML = `
@@ -314,23 +322,27 @@ window.dashDetail = async function(attemptId){
   if(e1) err(e1);
   const { data: items, error: e2 } = await sb.from("attempt_items").select("*").eq("attempt_id", attemptId).order("seq");
   if(e2) err(e2);
+  const reviewN = items.filter(it=>it.needs_review).length;
   const rows = items.map(it=>`
     <tr>
       <td><b>${esc(it.en)}</b> <span class="small">${it.unit}단원${it.corrected?" · ✏️수정됨":""}</span></td>
       <td>${esc(it.answer)||'<span class="small">(무응답)</span>'}</td>
-      <td class="${it.correct?"ok":"no"}">${it.correct?"O":"X"}</td>
+      <td class="${it.correct?"ok":"no"}">${it.correct?"O":"X"}${it.needs_review?' <span title="감수 대기">⚠️</span>':''}</td>
       <td><button class="btn-ghost btn-sm" onclick="teacherFlip('${it.id}','${attemptId}')">뒤집기</button></td>
     </tr>`).join("");
   dashShell(`<h2>${esc(att.students?.name)} · ${att.round+1}회차</h2>
     <div class="small">${fmtDate(att.taken_at)} · 신규 ${att.new_score}/${att.new_total}${att.rev_total?` · 복습 ${att.rev_score}/${att.rev_total}`:""}</div>
-    <div class="pill">O/X를 뒤집으면 점수와 다음 복습 시험에 즉시 반영돼요.</div>
+    <div class="pill">O/X를 뒤집으면 점수와 다음 복습 시험에 즉시 반영돼요.${reviewN?` · <b>⚠️ 감수 대기 ${reviewN}개</b>`:""}</div>
     <table><tr><th>단어</th><th>답안</th><th>채점</th><th></th></tr>${rows}</table>
-    <div class="row"><button class="btn-ghost btn-sm" onclick="dashLive()">← 목록</button></div>`);
+    <div class="row">
+      <button class="btn-ghost btn-sm" onclick="dashLive()">← 목록</button>
+      <button class="btn-primary btn-sm" style="width:auto" onclick="makeReport('${attemptId}')">📷 결과지 저장</button>
+    </div>`);
 };
 window.teacherFlip = async function(itemId, attemptId){
   const { data: it, error: e0 } = await sb.from("attempt_items").select("*").eq("id", itemId).single();
   if(e0) err(e0);
-  const { error: e1 } = await sb.from("attempt_items").update({ correct: !it.correct, corrected: true }).eq("id", itemId);
+  const { error: e1 } = await sb.from("attempt_items").update({ correct: !it.correct, corrected: true, needs_review: false }).eq("id", itemId);
   if(e1) err(e1);
   const { data: items, error: e2 } = await sb.from("attempt_items").select("*").eq("attempt_id", attemptId);
   if(e2) err(e2);
@@ -342,6 +354,84 @@ window.teacherFlip = async function(itemId, attemptId){
   if(e3) err(e3);
   dashDetail(attemptId);
 };
+/* ===== 결과지 이미지 생성 (문자/카톡 전송용) ===== */
+window.makeReport = async function(attemptId){
+  const { data: att, error: e1 } = await sb.from("attempts").select("*, students(name)").eq("id", attemptId).single();
+  if(e1) err(e1);
+  const { data: items, error: e2 } = await sb.from("attempt_items").select("*").eq("attempt_id", attemptId).order("seq");
+  if(e2) err(e2);
+  const wrongs = items.filter(it=>!it.correct);
+  let koMap = {};
+  if(wrongs.length){
+    const ids = wrongs.map(w=>w.word_id).filter(Boolean);
+    const { data: ws } = await sb.from("words").select("id,ko").in("id", ids);
+    (ws||[]).forEach(w=>{ koMap[w.id] = w.ko; });
+  }
+  const W = 800, pad = 40, lineH = 46;
+  const H = 330 + Math.max(wrongs.length,1)*lineH + 110;
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  const dateStr = new Date(att.taken_at).toLocaleDateString("ko-KR",{year:"numeric",month:"long",day:"numeric"});
+  // 배경
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,W,H);
+  // 헤더
+  ctx.fillStyle = "#4f6ef7"; ctx.fillRect(0,0,W,110);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 34px 'Malgun Gothic', sans-serif";
+  ctx.fillText("📘 단어시험 결과", pad, 52);
+  ctx.font = "20px 'Malgun Gothic', sans-serif";
+  ctx.fillText(`${att.students?.name} · ${att.round+1}회차 (${(att.new_units||[]).join(", ")}단원) · ${dateStr}`, pad, 88);
+  // 점수
+  ctx.fillStyle = "#1c2333";
+  ctx.font = "bold 26px 'Malgun Gothic', sans-serif";
+  let scoreLine = `신규 ${att.new_score} / ${att.new_total}`;
+  if(att.rev_total) scoreLine += `    복습 ${att.rev_score} / ${att.rev_total}`;
+  ctx.fillText(scoreLine, pad, 165);
+  // 구분선
+  ctx.strokeStyle = "#e5e9f2"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad, 195); ctx.lineTo(W-pad, 195); ctx.stroke();
+  // 복습 대상
+  ctx.fillStyle = "#dc2626";
+  ctx.font = "bold 24px 'Malgun Gothic', sans-serif";
+  ctx.fillText(`🔻 중점 복습 단어 (${wrongs.length}개)`, pad, 240);
+  ctx.font = "20px 'Malgun Gothic', sans-serif";
+  let y = 285;
+  if(!wrongs.length){
+    ctx.fillStyle = "#16a34a";
+    ctx.fillText("모든 문제를 맞혔어요! 🎉", pad, y);
+    y += lineH;
+  } else {
+    wrongs.forEach(wr=>{
+      ctx.fillStyle = "#1c2333";
+      ctx.font = "bold 21px 'Malgun Gothic', sans-serif";
+      ctx.fillText(wr.en, pad, y);
+      ctx.font = "19px 'Malgun Gothic', sans-serif";
+      ctx.fillStyle = "#68718a";
+      let ko = (koMap[wr.word_id]||[]).join(", ");
+      if(ko.length > 38) ko = ko.slice(0,37) + "…";
+      ctx.fillText(ko, pad + 200, y);
+      y += lineH;
+    });
+  }
+  // 푸터
+  ctx.strokeStyle = "#e5e9f2";
+  ctx.beginPath(); ctx.moveTo(pad, y+8); ctx.lineTo(W-pad, y+8); ctx.stroke();
+  ctx.fillStyle = "#68718a";
+  ctx.font = "18px 'Malgun Gothic', sans-serif";
+  ctx.fillText("위 단어들은 다음 복습 시험에 다시 출제됩니다. 꼭 복습해 주세요! 💪", pad, y+48);
+  // 저장/공유
+  cv.toBlob(async blob=>{
+    const fname = `결과지_${att.students?.name}_${new Date(att.taken_at).toISOString().slice(0,10)}.png`;
+    const file = new File([blob], fname, { type: "image/png" });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try { await navigator.share({ files:[file], title:"단어시험 결과지" }); return; } catch(e){ /* 취소 시 다운로드로 */ }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+    URL.revokeObjectURL(a.href);
+  }, "image/png");
+};
+
 window.dashStudents = async function(){
   T.tab="students"; T.detail=null;
   const { data, error } = await sb.from("students").select("*").order("name");
