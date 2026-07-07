@@ -58,8 +58,10 @@ const CONFIG = {
   NEW_UNITS: { "화": 2, "목": 1 },   // 수업 요일별 신규 단원 수 (진단고사 이후 정상 진행)
   MAX_UNIT: 60,
   DIAG_COUNT: 50,                   // 진단고사(첫 시험) 전범위 랜덤 문항 수
-  REVIEW_RANDOM: 5,                 // 복습 랜덤 문항 수
-  WRONG_CAP: 15,                    // 복습에 넣을 누적 오답 최대 개수
+  SR_COUNT: 5,                      // 주기 복습(Spaced Repetition) 문항 수 — 대상 부족 시 랜덤으로 채움
+  WRONG_CAP: 15,                    // 회차당 복습에 넣을 오답 최대 개수 (2회차 이후)
+  DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
+  SR_INTERVALS: [1,2,4,8,16],       // 연속 정답 횟수별 재출제 간격(회차): 0회→다음 시험, 1회→2회차 뒤, 2회→4회차 뒤 ...
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘"]  // 반 통계에서 제외할 계정
 };
@@ -148,17 +150,20 @@ async function loadHistory(studentId){
   }
   const roundOf = Object.fromEntries(attempts.map(a=>[a.id, a.round]));
   items.sort((x,y)=> (roundOf[x.attempt_id]-roundOf[y.attempt_id]) || (x.seq-y.seq));
-  const latest = {}, miss = {};
+  /* 단어별 SR 상태: 연속 정답 횟수(streak), 마지막 출제 회차(lastRound), 누적 오답(miss) */
+  const state = {};
   items.forEach(it => {
-    latest[it.en] = it;
-    if(!it.correct) miss[it.en] = (miss[it.en]||0)+1;
+    const st = state[it.en] || (state[it.en] = { en: it.en, word_id: it.word_id, unit: it.unit, streak: 0, lastRound: 0, miss: 0 });
+    if(it.word_id) st.word_id = it.word_id;
+    st.lastRound = roundOf[it.attempt_id];
+    if(it.correct) st.streak++;
+    else { st.streak = 0; st.miss++; }
   });
-  const wrongPool = Object.values(latest).filter(it=>!it.correct)
-    .map(it => ({ en: it.en, unit: it.unit, word_id: it.word_id, miss: miss[it.en]||1 }))
-    .sort((a,b)=>b.miss-a.miss);
+  const srPool = Object.values(state).filter(w=>w.word_id);
+  const wrongPool = srPool.filter(w=>w.streak===0).sort((a,b)=>b.miss-a.miss);
   const covered = [...new Set(attempts.flatMap(a=>a.new_units||[]))].sort((a,b)=>a-b);
   const seenIds = [...new Set(items.map(it=>it.word_id).filter(Boolean))];
-  return { attempts, items, wrongPool, covered, seenIds };
+  return { attempts, items, srPool, wrongPool, covered, seenIds };
 }
 
 /* 다음 시험 구성 */
@@ -187,30 +192,42 @@ async function buildTest(student, hist){
     items = shuffle(newWords).map(w => ({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
   }
 
-  /* 복습: 누적 오답(진단고사 포함) + 학습한 범위에서 랜덤 */
+  /* ===== 복습 구성 =====
+     1회차(진단 직후): 진단 오답 전부(최대 DIAG_WRONG_CAP) — 랜덤/주기 없음
+     2회차 이후: 오답(streak 0, 다음 시험 즉시) + SR 주기 도래 단어 + 부족분 랜덤 */
   let review = [];
   const newIdSet = new Set(items.map(w=>w.word_id));
-  const wrongs = hist.wrongPool.slice(0, CONFIG.WRONG_CAP);
-  const wrongIds = wrongs.map(w=>w.word_id).filter(Boolean);
-  let wrongItems = [];
-  if(wrongIds.length){
-    const { data: ww, error: ew } = await sb.from("words").select("id,en,ko,unit").in("id", wrongIds);
+  const isPostDiag = round === 1;
+  const iv = s => CONFIG.SR_INTERVALS[Math.min(s, CONFIG.SR_INTERVALS.length-1)];
+  const due = hist.srPool.filter(w => !newIdSet.has(w.word_id) && (round - w.lastRound) >= iv(w.streak));
+
+  const wrongs = due.filter(w=>w.streak===0).sort((a,b)=>b.miss-a.miss)
+    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : CONFIG.WRONG_CAP);
+  const srs = isPostDiag ? [] :
+    due.filter(w=>w.streak>0)
+       .sort((a,b)=> (round-b.lastRound-iv(b.streak)) - (round-a.lastRound-iv(a.streak)) || a.streak-b.streak) // 연체 큰 것, 낮은 box 우선
+       .slice(0, CONFIG.SR_COUNT);
+  const pickedIds = new Set([...wrongs, ...srs].map(w=>w.word_id));
+
+  /* 주기 슬롯이 남으면 학습한 단어 중 랜덤으로 채움 */
+  let randIds = [];
+  if(!isPostDiag && srs.length < CONFIG.SR_COUNT){
+    const cand = hist.seenIds.filter(id => !pickedIds.has(id) && !newIdSet.has(id));
+    randIds = shuffle(cand).slice(0, CONFIG.SR_COUNT - srs.length);
+  }
+
+  const fetchIds = [...pickedIds, ...randIds];
+  if(fetchIds.length){
+    const { data: ww, error: ew } = await sb.from("words").select("id,en,ko,unit").in("id", fetchIds);
     if(ew) err(ew);
     const byId = Object.fromEntries((ww||[]).map(w=>[w.id,w]));
-    wrongItems = wrongs.map(w => { const wd = byId[w.word_id]; return wd ? { word_id:wd.id, en:wd.en, ko:wd.ko, unit:wd.unit, type:"wrong" } : null; })
-      .filter(Boolean)
-      .filter(w => !newIdSet.has(w.word_id));   // 이번 신규 단원에 든 단어면 복습에서 제외(중복 방지)
+    const mk = (id, type) => { const wd = byId[id]; return wd ? { word_id:wd.id, en:wd.en, ko:wd.ko, unit:wd.unit, type } : null; };
+    review = shuffle([
+      ...wrongs.map(w=>mk(w.word_id,"wrong")),
+      ...srs.map(w=>mk(w.word_id,"sr")),
+      ...randIds.map(id=>mk(id,"random"))
+    ].filter(Boolean));
   }
-  const wrongIdSet = new Set(wrongItems.map(w=>w.word_id));
-  const randCandidateIds = hist.seenIds.filter(id => !wrongIdSet.has(id) && !newIdSet.has(id));
-  let randoms = [];
-  if(randCandidateIds.length){
-    const pickIds = shuffle(randCandidateIds).slice(0, CONFIG.REVIEW_RANDOM);
-    const { data: rw, error: er } = await sb.from("words").select("id,en,ko,unit").in("id", pickIds);
-    if(er) err(er);
-    randoms = (rw||[]).map(w => ({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"random" }));
-  }
-  review = shuffle([...wrongItems, ...randoms]);
 
   if(!items.length && !review.length) return null;
   return { round, newUnits, items, review };
@@ -306,8 +323,10 @@ window.proceedStudent = async function(student, resume){
     if(test.diag){
       head = `📘 <b>진단고사</b> (${student.class_day}요일반) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else {
+      const cnt = t => test.review.filter(r=>r.type===t).length;
+      const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
       head = `📘 <b>${test.round+1}회차</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
-           + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (오답 ${test.review.filter(r=>r.type==="wrong").length} + 랜덤 ${test.review.filter(r=>r.type==="random").length})` : "<br>이번 회차는 복습 문항이 없어요");
+           + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
       <div class="pill">${head}</div>
@@ -327,7 +346,8 @@ window.startTest = function(){
 function question(){
   const i = S.idx, q = S.queue[i], total = S.queue.length;
   const badge = q.type==="new" ? (S.test.diag?'<span class="badge b-diag">진단</span>':'<span class="badge b-new">신규</span>')
-    : q.type==="wrong" ? '<span class="badge b-wrong">복습·오답</span>' : '<span class="badge b-random">복습·랜덤</span>';
+    : q.type==="wrong" ? '<span class="badge b-wrong">복습·오답</span>'
+    : q.type==="sr" ? '<span class="badge b-random">복습·주기</span>' : '<span class="badge b-random">복습·랜덤</span>';
   app.innerHTML = `
    <div class="card">
      <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
@@ -409,7 +429,8 @@ window.submitResult = async function(){
     if(!S.itemsSaved){
       const { error: e2 } = await sb.from("attempt_items").insert(S.graded.map((g,i)=>({
         attempt_id: S.attemptId, word_id: g.word_id, en: g.en, unit: g.unit,
-        item_type: g.type, answer: g.answer, correct: g.correct, needs_review: g.review, seq: i
+        item_type: g.type==="sr" ? "random" : g.type, /* DB check 제약(new/wrong/random) 호환 — SR 상태는 correct 이력으로 재계산됨 */
+        answer: g.answer, correct: g.correct, needs_review: g.review, seq: i
       })));
       if(e2) throw e2;
       S.itemsSaved = true;
