@@ -172,7 +172,7 @@ async function buildTest(student, hist){
 
   /* ===== round 0 = 진단고사: 능률보카 전범위에서 랜덤 DIAG_COUNT문항 ===== */
   if(round === 0){
-    const { data: allWords, error } = await sb.from("words").select("id,en,ko,unit");
+    const { data: allWords, error } = await sb.from("words").select("id,en,ko,unit").lte("unit", 60);
     if(error) err(error);
     const items = shuffle(allWords).slice(0, CONFIG.DIAG_COUNT)
       .map(w => ({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
