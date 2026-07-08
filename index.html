@@ -285,11 +285,35 @@ window.pickStudent = function(student){
      <div class="sub">아래 이름이 <b>본인</b>이 맞는지 꼭 확인하세요.</div>
      <div class="word" style="font-size:2.4rem; text-align:center">${esc(student.name)}</div>
      <div class="pill">‘<b>${esc(student.name)}</b> (${student.class_day}요일반)’ 학생 본인이 맞나요?<br>다른 사람 이름이면 아래 <b>‘아니에요’</b>를 눌러 다시 선택하세요.</div>
+     <div class="row" style="justify-content:center">
+       <input type="password" id="pinInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
+         placeholder="비밀번호 4자리" style="text-align:center; font-size:1.3rem; letter-spacing:.35em; width:190px; padding:10px; border:2px solid #cbd5e1; border-radius:10px">
+     </div>
      ${d?`<div class="flag amber">💾 진행하던 시험이 남아있어요 (${d.diag?"진단고사":(d.round+1)+"회차"} · ${d.idx+1}/${d.queue.length}번). 이어서 볼 수 있어요.</div>`:""}
-     <div class="row"><button class="btn-primary" onclick='proceedStudent(${JSON.stringify(student)}, false)'>네, ${esc(student.name)} 입니다 →</button></div>
-     ${d?`<div class="row"><button class="btn-ghost" onclick='proceedStudent(${JSON.stringify(student)}, true)'>💾 진행하던 시험 이어서 하기</button></div>`:""}
+     <div class="row"><button class="btn-primary" onclick='pinGo(${JSON.stringify(student)}, false)'>네, ${esc(student.name)} 입니다 →</button></div>
+     ${d?`<div class="row"><button class="btn-ghost" onclick='pinGo(${JSON.stringify(student)}, true)'>💾 진행하던 시험 이어서 하기</button></div>`:""}
      <div class="row"><button class="btn-ghost btn-sm" onclick="home()">← 아니에요, 이름 다시 선택</button></div>
    </div>`;
+  const inp = document.getElementById("pinInput");
+  inp.focus();
+  inp.addEventListener("keydown", e=>{ if(e.key==="Enter") pinGo(student, false); });
+};
+
+/* PIN 검증 후 진행 (비밀번호는 서버에서만 대조 — 화면/코드에 노출 안 됨) */
+window.pinGo = async function(student, resume){
+  const inp = document.getElementById("pinInput");
+  const pin = (inp && inp.value || "").trim();
+  if(!/^\d{4}$/.test(pin)){ alert("비밀번호 4자리(숫자)를 입력하세요"); if(inp) inp.focus(); return; }
+  const btns = document.querySelectorAll("button");
+  btns.forEach(b=>b.disabled=true);
+  const { data: ok, error } = await sb.rpc("student_pin_verify", { p_student_id: student.id, p_pin: pin });
+  if(error){ btns.forEach(b=>b.disabled=false); return alert("오류: "+error.message); }
+  if(!ok){
+    btns.forEach(b=>b.disabled=false);
+    if(inp){ inp.value=""; inp.focus(); }
+    return alert("비밀번호가 달라요. 본인 이름이 맞는지, 비밀번호를 다시 확인하세요.");
+  }
+  proceedStudent(student, resume);
 };
 
 /* 2단계: 시험 준비 or 이어하기 */
@@ -466,7 +490,7 @@ window.submitResult = async function(){
 window.teacherLogin = function(){
   const pin = prompt("선생님 비밀번호");
   if(pin !== CONFIG.TEACHER_PIN){ if(pin!==null) alert("비밀번호가 달라요"); return; }
-  T = { tab: "live" };
+  T = { tab: "live", pin };
   sb.channel("rt")
     .on("postgres_changes",{event:"*",schema:"public",table:"attempts"}, ()=>{ if(T.tab==="live") dashLive(); })
     .on("postgres_changes",{event:"*",schema:"public",table:"attempt_items"}, ()=>{ if(T.detail) dashDetail(T.detail); })
@@ -698,19 +722,24 @@ window.dashStudents = async function(){
   T.tab="students"; T.detail=null;
   const { data, error } = await sb.from("students").select("*").order("name");
   if(error) err(error);
+  const pins = {};
+  const { data: pinRows, error: pinErr } = await sb.rpc("teacher_pin_list", { p_teacher_pin: T.pin });
+  if(!pinErr) (pinRows||[]).forEach(r=>{ pins[r.student_id]=r.pin; });
   const rows = data.map(s=>`
     <tr>
       <td><b>${esc(s.name)}</b></td><td>${s.class_day}요일반</td>
+      <td><b>${pins[s.id]||"—"}</b> <button class="btn-ghost btn-sm" onclick="changePin('${s.id}','${esc(s.name)}')">변경</button></td>
       <td>${s.active?"활동":"<span class='small'>숨김</span>"}</td>
       <td><button class="btn-ghost btn-sm" onclick="toggleStudent('${s.id}',${!s.active})">${s.active?"숨기기":"복구"}</button></td>
     </tr>`).join("");
   dashShell(`<h2>학생 관리</h2>
+    ${pinErr?`<div class="flag amber">PIN 불러오기 실패: ${esc(pinErr.message)} — supabase_4_학생PIN_공용.sql 을 실행했는지 확인하세요.</div>`:""}
     <div class="row">
       <input type="text" id="newName" placeholder="이름" style="flex:2; margin:0">
       <select id="newDay"><option value="화">화요일반</option><option value="목">목요일반</option></select>
       <button class="btn-ghost" onclick="addStudent()">추가</button>
     </div>
-    <table><tr><th>이름</th><th>반</th><th>상태</th><th></th></tr>${rows}</table>`);
+    <table><tr><th>이름</th><th>반</th><th>비밀번호</th><th>상태</th><th></th></tr>${rows}</table>`);
 };
 window.addStudent = async function(){
   const name = document.getElementById("newName").value.trim();
@@ -718,6 +747,14 @@ window.addStudent = async function(){
   if(!name) return alert("이름을 입력하세요");
   const { error } = await sb.from("students").insert({ name, class_day: day });
   if(error) return alert(error.code==="23505" ? "이미 있는 이름이에요" : "오류: "+error.message);
+  dashStudents();
+};
+window.changePin = async function(id, name){
+  const pin = prompt(`${name} 학생의 새 비밀번호 (숫자 4자리)`);
+  if(pin===null) return;
+  if(!/^\d{4}$/.test(pin.trim())) return alert("숫자 4자리로 입력하세요");
+  const { error } = await sb.rpc("teacher_pin_set", { p_teacher_pin: T.pin, p_student_id: id, p_pin: pin.trim() });
+  if(error) return alert("오류: "+error.message);
   dashStudents();
 };
 window.toggleStudent = async function(id, active){
