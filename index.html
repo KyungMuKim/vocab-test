@@ -55,7 +55,7 @@ const CONFIG = {
   SUPABASE_URL: "https://xtxuozcbeqruuigeijsz.supabase.co",
   SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM",
   TEACHER_PIN: "2580",              // 선생님 대시보드 비밀번호
-  NEW_UNITS: { "화": 2, "목": 1 },   // 수업 요일별 신규 단원 수 (진단고사 이후 정상 진행)
+  NEW_UNITS: { "화": 2, "목": 1 },   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
   MAX_UNIT: 60,
   DIAG_COUNT: 50,                   // 진단고사(첫 시험) 전범위 랜덤 문항 수
   SR_COUNT: 5,                      // 주기 복습(Spaced Repetition) 문항 수 — 대상 부족 시 랜덤으로 채움
@@ -180,7 +180,8 @@ async function buildTest(student, hist){
   }
 
   /* ===== 이후 회차: 신규 단원 + 복습 ===== */
-  const nCount = CONFIG.NEW_UNITS[student.class_day] || 1;
+  const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
+  const nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;   // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
