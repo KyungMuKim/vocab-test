@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>관리자 페이지</title>
+<style>
+  :root{--bg:#f4f6f9;--card:#fff;--ink:#1e2a3a;--sub:#6b7a8f;--line:#e3e8ef;--blue:#2563eb;--red:#dc2626;--green:#16a34a;--amber:#d97706;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5}
+  .wrap{max-width:960px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:8px 0 2px}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:14px}
+  .ro-banner{background:#eef6ee;border:1px solid #cde5cd;color:#1e6b1e;border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:14px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .tabs button{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:7px 14px;font-size:14px;cursor:pointer;color:var(--ink)}
+  .tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .tabs button .badge{background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  .card h2{font-size:16px;margin-bottom:10px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--sub);font-weight:600;font-size:12.5px;white-space:nowrap}
+  tr.click{cursor:pointer}
+  tr.click:hover{background:#f0f4fa}
+  .tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
+  .t-ok{background:#e8f7ee;color:var(--green)} .t-no{background:#fdeaea;color:var(--red)}
+  .t-rev{background:#fdf3e3;color:var(--amber)} .t-cor{background:#e8effc;color:var(--blue)}
+  .muted{color:var(--sub);font-size:12.5px}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}
+  .btn:hover{background:#f0f4fa}
+  .btn-back{margin-bottom:10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+  .stat{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .stat b{font-size:18px}
+  .center{text-align:center;padding:40px 0;color:var(--sub)}
+  #pinBox{max-width:320px;margin:80px auto;text-align:center}
+  #pinBox input{font-size:22px;text-align:center;letter-spacing:8px;width:180px;padding:10px;border:1px solid var(--line);border-radius:10px;margin:14px 0}
+  .err{color:var(--red);font-size:13px;min-height:18px}
+  .crit-card{background:#fbfcfe;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--sub);margin-bottom:12px}
+  .bar{background:#eef1f6;border-radius:5px;height:10px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--red)}
+  @media(max-width:600px){td,th{padding:6px 5px} body{font-size:14px}}
+</style>
+</head>
+<body>
+<div id="pinBox">
+  <h1>관리자 페이지</h1>
+  <p class="muted">선생님 PIN을 입력하세요</p>
+  <input id="pinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
+  <div class="err" id="pinErr"></div>
+  <button class="btn" onclick="checkPin()">입장</button>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+  <h1>통합 관리자 페이지 <span class="muted" style="font-weight:400">v1 · 읽기 전용</span></h1>
+  <div class="sub">단어시험 · 미니모의고사 통합 현황</div>
+  <div class="ro-banner">🔒 이 페이지는 <b>읽기 전용</b>입니다. 어떤 버튼을 눌러도 데이터가 변경·삭제되지 않습니다.</div>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"><div class="center">불러오는 중…</div></div>
+</div>
+
+<script>
+/* ================= 설정 ================= */
+const SB_URL = 'https://xtxuozcbeqruuigeijsz.supabase.co/rest/v1/';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM';
+const PIN = '2580';
+
+/* 읽기 전용 보장: 이 파일의 유일한 네트워크 함수. GET만 허용. */
+async function q(path, rangeFrom){
+  const headers = { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY, Prefer: 'count=exact' };
+  if(rangeFrom !== undefined) headers['Range'] = rangeFrom+'-'+(rangeFrom+999);
+  const r = await fetch(SB_URL+path, { method:'GET', headers });
+  if(!r.ok && r.status!==206) throw new Error('조회 실패 ('+r.status+'): '+path);
+  return { rows: await r.json(), total: parseInt((r.headers.get('content-range')||'/0').split('/')[1]||'0',10) };
+}
+
+/* ================= 공통 ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dt = s => s ? new Date(s).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
+const pct = (a,b) => b ? Math.round(a/b*100) : 0;
+let cache = {};
+
+function checkPin(){
+  if($('#pinInput').value === PIN){
+    sessionStorage.setItem('adm','1');
+    $('#pinBox').style.display='none'; $('#app').style.display='block'; boot();
+  } else $('#pinErr').textContent = 'PIN이 올바르지 않습니다.';
+}
+$('#pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') checkPin(); });
+if(sessionStorage.getItem('adm')==='1'){ $('#pinBox').style.display='none'; $('#app').style.display='block'; boot(); }
+
+const TABS = [
+  {id:'home', name:'개요'},
+  {id:'vocab', name:'단어시험'},
+  {id:'review', name:'감수 대기'},
+  {id:'mock', name:'미니모의고사'},
+  {id:'backup', name:'백업'},
+];
+let cur = 'home';
+
+function drawTabs(nrCount){
+  $('#tabs').innerHTML = TABS.map(t=>{
+    const badge = (t.id==='review' && nrCount>0) ? '<span class="badge">'+nrCount+'</span>' : '';
+    return '<button class="'+(cur===t.id?'on':'')+'" onclick="go(\''+t.id+'\')">'+t.name+badge+'</button>';
+  }).join('');
+}
+function go(id){ cur=id; drawTabs(cache.nrCount||0); render(); }
+
+async function boot(){
+  try{
+    const nr = await q('attempt_items?select=id&needs_review=eq.true&limit=1');
+    cache.nrCount = nr.total;
+  }catch(e){ cache.nrCount = 0; }
+  drawTabs(cache.nrCount); render();
+}
+
+async function render(){
+  const v = $('#view');
+  v.innerHTML = '<div class="center">불러오는 중…</div>';
+  try{
+    if(cur==='home') await vHome(v);
+    else if(cur==='vocab') await vVocab(v);
+    else if(cur==='review') await vReview(v);
+    else if(cur==='mock') await vMock(v);
+    else if(cur==='backup') vBackup(v);
+  }catch(e){ v.innerHTML = '<div class="center">⚠️ '+esc(e.message)+'</div>'; }
+}
+
+/* ================= 개요 ================= */
+async function vHome(v){
+  if(!cache.home){
+    const [st, at, ma, ex] = await Promise.all([
+      q('students?select=id,name,class_day,active&order=name'),
+      q('attempts?select=id,student_id,round,new_score,new_total,rev_score,rev_total,taken_at&order=taken_at.desc'),
+      q('mock_attempts?select=id,student_id,exam_id,score,total,taken_at&order=taken_at.desc'),
+      q('mock_exams?select=id,ord,label&order=ord'),
+    ]);
+    cache.home = {st:st.rows, at:at.rows, ma:ma.rows, ex:ex.rows};
+  }
+  const {st, at, ma, ex} = cache.home;
+  const exMap = Object.fromEntries(ex.map(e=>[e.id,e]));
+  const rows = st.map(s=>{
+    const a = at.find(x=>x.student_id===s.id);
+    const m = ma.find(x=>x.student_id===s.id);
+    const aTxt = a ? a.round+'회차 · 신규 '+a.new_score+'/'+a.new_total+(a.rev_total?' · 복습 '+a.rev_score+'/'+a.rev_total:'')+' <span class="muted">'+dt(a.taken_at)+'</span>' : '<span class="muted">기록 없음</span>';
+    const mTxt = m ? (exMap[m.exam_id]?esc(exMap[m.exam_id].label)+' · ':'')+m.score+'/'+m.total+' <span class="muted">'+dt(m.taken_at)+'</span>' : '<span class="muted">기록 없음</span>';
+    return '<tr><td><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.class_day||'')+(s.active===false?' · 비활성':'')+'</div></td><td>'+aTxt+'</td><td>'+mTxt+'</td></tr>';
+  }).join('');
+  v.innerHTML =
+    '<div class="grid" style="margin-bottom:12px">'
+    +'<div class="stat">학생 <b>'+st.length+'</b>명</div>'
+    +'<div class="stat">단어시험 응시 <b>'+at.length+'</b>건</div>'
+    +'<div class="stat">모의고사 응시 <b>'+ma.length+'</b>건</div>'
+    +'<div class="stat">감수 대기 <b style="color:var(--amber)">'+ (cache.nrCount||0) +'</b>문항</div>'
+    +'</div>'
+    +'<div class="card"><h2>학생별 최근 기록</h2><table><thead><tr><th>학생</th><th>단어시험 (최근)</th><th>미니모의고사 (최근)</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+/* ================= 단어시험 ================= */
+async function vVocab(v, detailId){
+  if(detailId){
+    const it = await q('attempt_items?select=seq,en,unit,item_type,answer,correct,corrected,needs_review,words(ko)&attempt_id=eq.'+detailId+'&order=seq');
+    const rows = it.rows.map(x=>{
+      let tag = x.correct ? '<span class="tag t-ok">정답</span>' : '<span class="tag t-no">오답</span>';
+      if(x.needs_review) tag += ' <span class="tag t-rev">감수대기</span>';
+      if(x.corrected) tag += ' <span class="tag t-cor">감수반영</span>';
+      return '<tr><td>'+x.seq+'</td><td><b>'+esc(x.en)+'</b><div class="muted">U'+x.unit+' · '+(x.item_type==='new'?'신규':'복습')+'</div></td><td>'+esc(x.words?x.words.ko:'')+'</td><td>'+esc(x.answer||'(무답)')+'</td><td>'+tag+'</td></tr>';
+    }).join('');
+    v.innerHTML = '<button class="btn btn-back" onclick="go(\'vocab\')">← 목록으로</button>'
+      +'<div class="card"><h2>응시 상세 ('+it.rows.length+'문항)</h2><table><thead><tr><th>#</th><th>단어</th><th>교재 뜻</th><th>학생 답안</th><th>판정</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    return;
+  }
+  const at = await q('attempts?select=id,round,new_units,new_score,new_total,rev_score,rev_total,taken_at,students(name,class_day)&order=taken_at.desc');
+  const rows = at.rows.map(a=>
+    '<tr class="click" onclick="vVocab(document.querySelector(\'#view\'),\''+a.id+'\')">'
+    +'<td>'+a.round+'회차</td><td><b>'+esc(a.students?a.students.name:'?')+'</b></td>'
+    +'<td>'+a.new_score+'/'+a.new_total+' ('+pct(a.new_score,a.new_total)+'%)</td>'
+    +'<td>'+(a.rev_total? a.rev_score+'/'+a.rev_total+' ('+pct(a.rev_score,a.rev_total)+'%)' : '-')+'</td>'
+    +'<td class="muted">'+dt(a.taken_at)+'</td></tr>').join('');
+  v.innerHTML = '<div class="card"><h2>단어시험 응시 기록 ('+at.rows.length+'건) <span class="muted" style="font-weight:400">— 행을 누르면 답안 상세</span></h2>'
+    +'<table><thead><tr><th>회차</th><th>학생</th><th>신규</th><th>복습</th><th>일시</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+/* ================= 감수 대기 ================= */
+async function vReview(v){
+  const it = await q('attempt_items?select=id,en,unit,item_type,answer,correct,attempts(round,taken_at,students(name)),words(ko)&needs_review=eq.true&order=id');
+  const rows = it.rows.map(x=>
+    '<tr><td><b>'+esc(x.attempts&&x.attempts.students?x.attempts.students.name:'?')+'</b><div class="muted">'+(x.attempts?x.attempts.round+'회차 · '+dt(x.attempts.taken_at):'')+'</div></td>'
+    +'<td><b>'+esc(x.en)+'</b><div class="muted">U'+x.unit+'</div></td><td>'+esc(x.words?x.words.ko:'')+'</td><td>'+esc(x.answer||'(무답)')+'</td>'
+    +'<td>'+(x.correct?'<span class="tag t-ok">정답</span>':'<span class="tag t-no">오답</span>')+'</td></tr>').join('');
+  v.innerHTML =
+    '<div class="crit-card"><b>감수 판정 기준 (2026-07-08 확정)</b><br>'
+    +'정답 인정: 교재 뜻 일치 · 동의어 · 사전적 의미 · 정착 외래어 · 경미한 오타 &nbsp;|&nbsp; 오답: 다른 단어와의 혼동 · 단순 음차</div>'
+    +'<div class="card"><h2>감수 대기 문항 ('+it.rows.length+'건)</h2>'
+    +(it.rows.length? '<table><thead><tr><th>학생</th><th>단어</th><th>교재 뜻</th><th>학생 답안</th><th>현재 판정</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="center">대기 중인 문항이 없습니다 ✓</div>')
+    +'<p class="muted" style="margin-top:10px">※ v1은 읽기 전용입니다. 실제 감수 처리(정답 전환)는 기존 예약 감수 작업 또는 Claude에게 요청하세요. 감수 승인/기각 버튼은 검증 후 2단계에서 추가됩니다.</p></div>';
+}
+
+/* ================= 미니모의고사 ================= */
+async function vMock(v, detailId){
+  if(!cache.exams){
+    cache.exams = (await q('mock_exams?select=id,ord,exam_date,label,region,answers,active&order=ord')).rows;
+  }
+  const exMap = Object.fromEntries(cache.exams.map(e=>[e.id,e]));
+  if(detailId){
+    const ma = cache.mockAttempts.find(m=>m.id===detailId);
+    const ex = exMap[ma.exam_id]||{};
+    let ans = ex.answers;
+    if(typeof ans==='string'){ try{ ans = JSON.parse(ans); }catch(e){ ans = ans.split(/[,\s]+/); } }
+    const it = await q('mock_attempt_items?select=question_no,qtype,answer,correct,seq&attempt_id=eq.'+detailId+'&order=question_no');
+    const rows = it.rows.map(x=>{
+      const right = Array.isArray(ans)? (ans[x.question_no-1]??'') : (ans&&ans[x.question_no]!==undefined?ans[x.question_no]:'');
+      return '<tr><td>'+x.question_no+'</td><td class="muted">'+esc(x.qtype||'')+'</td><td>'+esc(x.answer||'(무답)')+'</td><td>'+esc(String(right))+'</td>'
+        +'<td>'+(x.correct?'<span class="tag t-ok">O</span>':'<span class="tag t-no">X</span>')+'</td></tr>';
+    }).join('');
+    v.innerHTML = '<button class="btn btn-back" onclick="go(\'mock\')">← 목록으로</button>'
+      +'<div class="card"><h2>'+esc(ma.students?ma.students.name:'?')+' · '+esc(ex.label||'')+' ('+ma.score+'/'+ma.total+')</h2>'
+      +'<table><thead><tr><th>문항</th><th>유형</th><th>학생 답</th><th>정답</th><th>판정</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    return;
+  }
+  const ma = await q('mock_attempts?select=id,student_id,exam_id,score,total,taken_at,students(name)&order=taken_at.desc');
+  cache.mockAttempts = ma.rows;
+  const rows = ma.rows.map(m=>{
+    const ex = exMap[m.exam_id]||{};
+    return '<tr class="click" onclick="vMock(document.querySelector(\'#view\'),\''+m.id+'\')">'
+      +'<td><b>'+esc(m.students?m.students.name:'?')+'</b></td><td>'+esc(ex.label||('#'+(ex.ord||'?')))+'</td>'
+      +'<td>'+m.score+'/'+m.total+' ('+pct(m.score,m.total)+'%)</td><td class="muted">'+dt(m.taken_at)+'</td></tr>';
+  }).join('');
+  /* 문항별 오답률 (전체 응시 기준) */
+  const allIt = await q('mock_attempt_items?select=exam_id,question_no,correct');
+  const agg = {};
+  allIt.rows.forEach(x=>{
+    const k = x.exam_id+'|'+x.question_no;
+    agg[k] = agg[k]||{exam_id:x.exam_id,no:x.question_no,n:0,w:0};
+    agg[k].n++; if(!x.correct) agg[k].w++;
+  });
+  const worst = Object.values(agg).filter(a=>a.n>=2).sort((a,b)=>(b.w/b.n)-(a.w/a.n)).slice(0,10);
+  const wRows = worst.map(a=>{
+    const ex = exMap[a.exam_id]||{};
+    const p = pct(a.w,a.n);
+    return '<tr><td>'+esc(ex.label||'')+'</td><td>'+a.no+'번</td><td style="min-width:120px"><div class="bar"><i style="width:'+p+'%"></i></div></td><td>'+p+'% ('+a.w+'/'+a.n+')</td></tr>';
+  }).join('');
+  v.innerHTML = '<div class="card"><h2>모의고사 응시 기록 ('+ma.rows.length+'건) <span class="muted" style="font-weight:400">— 행을 누르면 답안 상세</span></h2>'
+    +'<table><thead><tr><th>학생</th><th>회차</th><th>점수</th><th>일시</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +(worst.length? '<div class="card"><h2>오답률 높은 문항 TOP 10 <span class="muted" style="font-weight:400">(응시 2명 이상)</span></h2><table><thead><tr><th>회차</th><th>문항</th><th></th><th>오답률</th></tr></thead><tbody>'+wRows+'</tbody></table></div>' : '');
+}
+
+/* ================= 백업 ================= */
+function vBackup(v){
+  const tables = [
+    {t:'students', sel:'id,name,class_day,active', note:'학생 명단 (PIN 제외)'},
+    {t:'words', sel:'*', note:'단어 DB'},
+    {t:'attempts', sel:'*', note:'단어시험 응시'},
+    {t:'attempt_items', sel:'*', note:'단어시험 문항별 답안'},
+    {t:'mock_exams', sel:'*', note:'모의고사 회차·정답표'},
+    {t:'mock_attempts', sel:'*', note:'모의고사 응시'},
+    {t:'mock_attempt_items', sel:'*', note:'모의고사 문항별 답안'},
+  ];
+  v.innerHTML = '<div class="card"><h2>데이터 백업 (JSON 다운로드)</h2>'
+    +'<p class="muted" style="margin-bottom:10px">감수·정정 등 데이터를 변경하는 작업 전에 백업해 두면, 문제가 생겨도 이 파일로 복원할 수 있습니다. 다운로드는 조회만 하며 서버 데이터는 변경하지 않습니다.</p>'
+    +tables.map((x,i)=>'<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)">'
+      +'<button class="btn" onclick="dl('+i+')">다운로드</button><div><b>'+x.t+'</b> <span class="muted">— '+x.note+'</span> <span class="muted" id="dl'+i+'"></span></div></div>').join('')
+    +'<div style="margin-top:12px"><button class="btn" onclick="dlAll()">📦 전체 한번에 (파일 7개)</button></div></div>';
+  window.__bkTables = tables;
+}
+async function dl(i){
+  const x = window.__bkTables[i]; const el = $('#dl'+i);
+  el.textContent = ' 내려받는 중…';
+  let all = [], from = 0, total = Infinity;
+  while(from < total){
+    const r = await q(x.t+'?select='+x.sel+'&order=id', from);
+    all = all.concat(r.rows); total = r.total; from += 1000;
+    if(r.rows.length===0) break;
+  }
+  const ts = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  const blob = new Blob([JSON.stringify(all,null,1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = '백업_'+x.t+'_'+ts+'.json'; a.click();
+  URL.revokeObjectURL(a.href);
+  el.textContent = ' ✓ '+all.length+'행 완료';
+}
+async function dlAll(){ for(let i=0;i<window.__bkTables.length;i++) await dl(i); }
+</script>
+</body>
+</html>
