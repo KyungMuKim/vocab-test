@@ -66,6 +66,9 @@
 const SB_URL = 'https://xtxuozcbeqruuigeijsz.supabase.co/rest/v1/';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM';
 const PIN = '2580';
+/* 반 통계(오답률 집계 등)에서 제외할 계정 — 개별 기록·비교는 그대로 표시됨 */
+const EXCLUDE_NAMES = ['실험용','실험','테스트','test','딘','안성민'];
+const isExcluded = n => EXCLUDE_NAMES.includes(String(n||'').trim());
 
 /* 읽기 전용 보장: 이 파일의 유일한 네트워크 함수. GET만 허용. */
 async function q(path, rangeFrom){
@@ -230,10 +233,11 @@ async function vMock(v, detailId){
       +'<td><b>'+esc(m.students?m.students.name:'?')+'</b></td><td>'+esc(ex.label||('#'+(ex.ord||'?')))+'</td>'
       +'<td>'+m.score+'/'+m.total+' ('+pct(m.score,m.total)+'%)</td><td class="muted">'+dt(m.taken_at)+'</td></tr>';
   }).join('');
-  /* 문항별 오답률 (전체 응시 기준) */
-  const allIt = await q('mock_attempt_items?select=exam_id,question_no,correct');
+  /* 문항별 오답률 (통계 제외 계정 제외) */
+  const exAttIds = new Set(ma.rows.filter(x=>isExcluded(x.students&&x.students.name)).map(x=>x.id));
+  const allIt = await q('mock_attempt_items?select=attempt_id,exam_id,question_no,correct');
   const agg = {};
-  allIt.rows.forEach(x=>{
+  allIt.rows.filter(x=>!exAttIds.has(x.attempt_id)).forEach(x=>{
     const k = x.exam_id+'|'+x.question_no;
     agg[k] = agg[k]||{exam_id:x.exam_id,no:x.question_no,n:0,w:0};
     agg[k].n++; if(!x.correct) agg[k].w++;
