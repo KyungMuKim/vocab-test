@@ -63,7 +63,7 @@ const CONFIG = {
   DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
   SR_INTERVALS: [1,2,4,8,16],       // 연속 정답 횟수별 재출제 간격(회차): 0회→다음 시험, 1회→2회차 뒤, 2회→4회차 뒤 ...
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
-  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘"]  // 반 통계에서 제외할 계정
+  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민"]  // 반 통계에서 제외할 계정
 };
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 const app = document.getElementById("app");
