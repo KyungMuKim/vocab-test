@@ -58,12 +58,14 @@ const CONFIG = {
   NEW_UNITS: { "화": 2, "목": 1 },   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
   MAX_UNIT: 60,
   DIAG_COUNT: 50,                   // 진단고사(첫 시험) 전범위 랜덤 문항 수
-  SR_COUNT: 5,                      // 주기 복습(Spaced Repetition) 문항 수 — 대상 부족 시 랜덤으로 채움
-  WRONG_CAP: 15,                    // 회차당 복습에 넣을 오답 최대 개수 (2회차 이후)
+  SR_CAP: 20,                       // 회차당 SR(주기 복습) 최대 문항 수 — 취약 단어 우선
+  REVIEW_MIN: 20,                   // 복습 섹션 최소 문항 수 (부족분은 전범위 probe로 충전)
+  REVIEW_MAX: 60,                   // 복습 섹션 최대 문항 수 (오답+SR+probe 합산 상한)
   DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
-  SR_INTERVALS: [1,2,4,8,16],       // 연속 정답 횟수별 재출제 간격(회차): 0회→다음 시험, 1회→2회차 뒤, 2회→4회차 뒤 ...
+  SR_INTERVALS: [1,4,8,16],         // streak별 재출제 간격(회차): 오답 다음 시험, 첫 정답 4(2주), 2연속 8(4주), 3연속+ 16(8주)
+  KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
-  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민"]  // 반 통계에서 제외할 계정
+  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 const app = document.getElementById("app");
@@ -153,8 +155,11 @@ async function loadHistory(studentId){
   /* 단어별 SR 상태: 연속 정답 횟수(streak), 마지막 출제 회차(lastRound), 누적 오답(miss) */
   const state = {};
   items.forEach(it => {
-    const st = state[it.en] || (state[it.en] = { en: it.en, word_id: it.word_id, unit: it.unit, streak: 0, lastRound: 0, miss: 0 });
+    const st = state[it.en] || (state[it.en] = { en: it.en, word_id: it.word_id, unit: it.unit, streak: 0, lastRound: 0, miss: 0, n: 0, known: false });
     if(it.word_id) st.word_id = it.word_id;
+    /* 원래 알던 단어: 첫 노출(진단 or 전범위 probe)에서 바로 정답 → KNOWN_INTERVAL(3개월) 적용 */
+    st.known = (st.n === 0 && it.correct && (roundOf[it.attempt_id] === 0 || it.item_type === "random"));
+    st.n++;
     st.lastRound = roundOf[it.attempt_id];
     if(it.correct) st.streak++;
     else { st.streak = 0; st.miss++; }
@@ -195,26 +200,36 @@ async function buildTest(student, hist){
 
   /* ===== 복습 구성 =====
      1회차(진단 직후): 진단 오답 전부(최대 DIAG_WRONG_CAP) — 랜덤/주기 없음
-     2회차 이후: 오답(streak 0, 다음 시험 즉시) + SR 주기 도래 단어 + 부족분 랜덤 */
+     2회차 이후: 오답 전부 + SR 도래(상한 SR_CAP, 취약 우선) + REVIEW_MIN까지 전범위 probe (합산 ≤ REVIEW_MAX) */
   let review = [];
   const newIdSet = new Set(items.map(w=>w.word_id));
   const isPostDiag = round === 1;
-  const iv = s => CONFIG.SR_INTERVALS[Math.min(s, CONFIG.SR_INTERVALS.length-1)];
-  const due = hist.srPool.filter(w => !newIdSet.has(w.word_id) && (round - w.lastRound) >= iv(w.streak));
+  const iv = w => w.known ? CONFIG.KNOWN_INTERVAL : CONFIG.SR_INTERVALS[Math.min(w.streak, CONFIG.SR_INTERVALS.length-1)];
+  const due = hist.srPool.filter(w => !newIdSet.has(w.word_id) && (round - w.lastRound) >= iv(w));
 
+  /* 오답: 전부 출제 (REVIEW_MAX 한도 내) */
   const wrongs = due.filter(w=>w.streak===0).sort((a,b)=>b.miss-a.miss)
-    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : CONFIG.WRONG_CAP);
+    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : CONFIG.REVIEW_MAX);
+  /* SR: 취약 단어 우선(낮은 streak, miss 많은 순, 연체 큰 순), 상한 SR_CAP */
   const srs = isPostDiag ? [] :
     due.filter(w=>w.streak>0)
-       .sort((a,b)=> (round-b.lastRound-iv(b.streak)) - (round-a.lastRound-iv(a.streak)) || a.streak-b.streak) // 연체 큰 것, 낮은 box 우선
-       .slice(0, CONFIG.SR_COUNT);
+       .sort((a,b)=> a.streak-b.streak || b.miss-a.miss || (round-b.lastRound-iv(b)) - (round-a.lastRound-iv(a)))
+       .slice(0, Math.min(CONFIG.SR_CAP, Math.max(0, CONFIG.REVIEW_MAX - wrongs.length)));
   const pickedIds = new Set([...wrongs, ...srs].map(w=>w.word_id));
 
-  /* 주기 슬롯이 남으면 학습한 단어 중 랜덤으로 채움 */
+  /* REVIEW_MIN까지 전범위 probe(한 번도 안 나온 단어)로 충전 — 첫 노출 정답이면 '원래 알던 단어'(3개월 뒤) */
   let randIds = [];
-  if(!isPostDiag && srs.length < CONFIG.SR_COUNT){
-    const cand = hist.seenIds.filter(id => !pickedIds.has(id) && !newIdSet.has(id));
-    randIds = shuffle(cand).slice(0, CONFIG.SR_COUNT - srs.length);
+  const needFill = Math.min(CONFIG.REVIEW_MIN, CONFIG.REVIEW_MAX) - (wrongs.length + srs.length);
+  if(!isPostDiag && needFill > 0){
+    const { data: allW, error: ea } = await sb.from("words").select("id").lte("unit", 60);
+    if(ea) err(ea);
+    const seen = new Set(hist.seenIds);
+    const cand = (allW||[]).map(w=>w.id).filter(id => !seen.has(id) && !pickedIds.has(id) && !newIdSet.has(id));
+    randIds = shuffle(cand).slice(0, needFill);
+    if(randIds.length < needFill){ /* 전범위 소진 시 기출 랜덤 대체 */
+      const cand2 = hist.seenIds.filter(id => !pickedIds.has(id) && !newIdSet.has(id));
+      randIds = randIds.concat(shuffle(cand2).slice(0, needFill - randIds.length));
+    }
   }
 
   const fetchIds = [...pickedIds, ...randIds];
