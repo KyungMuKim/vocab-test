@@ -126,7 +126,7 @@ const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"nu
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
-const roundLabel = a => isDiag(a) ? "진단고사" : (a.round+1)+"회차";
+const roundLabel = a => isDiag(a) ? "진단고사" : (a.round)+"회차";
 const newLabel = a => isDiag(a) ? "진단" : "신규";
 
 /* ===== 진행 중 시험 임시저장 (새로고침·실수 대비) ===== */
@@ -186,7 +186,8 @@ async function buildTest(student, hist){
 
   /* ===== 이후 회차: 신규 단원 + 복습 ===== */
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
-  const nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;   // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
+  let nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;   // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
+  if(student.name==="신예지" && round===2) nCount = 2; // [임시 보강] 2026-07-14(화) 결시: 2회차에 2·3단원 출제, 응시 완료 후 자동 무효
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
@@ -305,7 +306,7 @@ window.pickStudent = function(student){
        <input type="password" id="pinInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
          placeholder="비밀번호 4자리" style="text-align:center; font-size:1.3rem; letter-spacing:.35em; width:190px; padding:10px; border:2px solid #cbd5e1; border-radius:10px">
      </div>
-     ${d?`<div class="flag amber">💾 진행하던 시험이 남아있어요 (${d.diag?"진단고사":(d.round+1)+"회차"} · ${d.idx+1}/${d.queue.length}번). 이어서 볼 수 있어요.</div>`:""}
+     ${d?`<div class="flag amber">💾 진행하던 시험이 남아있어요 (${d.diag?"진단고사":(d.round)+"회차"} · ${d.idx+1}/${d.queue.length}번). 이어서 볼 수 있어요.</div>`:""}
      <div class="row"><button class="btn-primary" onclick='pinGo(${JSON.stringify(student)}, false)'>네, ${esc(student.name)} 입니다 →</button></div>
      ${d?`<div class="row"><button class="btn-ghost" onclick='pinGo(${JSON.stringify(student)}, true)'>💾 진행하던 시험 이어서 하기</button></div>`:""}
      <div class="row"><button class="btn-ghost btn-sm" onclick="home()">← 아니에요, 이름 다시 선택</button></div>
@@ -365,7 +366,7 @@ window.proceedStudent = async function(student, resume){
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
-      head = `📘 <b>${test.round+1}회차</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
+      head = `📘 <b>${test.round}회차</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
            + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
