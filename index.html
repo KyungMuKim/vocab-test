@@ -725,13 +725,17 @@ window.makeReport = async function(attemptId){
   // 저장/공유
   cv.toBlob(async blob=>{
     const fname = `결과지_${att.students?.name}_${new Date(att.taken_at).toISOString().slice(0,10)}.png`;
-    const file = new File([blob], fname, { type: "image/png" });
-    if(navigator.canShare && navigator.canShare({ files:[file] })){
-      try { await navigator.share({ files:[file], title:"단어시험 결과지" }); return; } catch(e){ /* 취소 시 다운로드로 */ }
+    const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    if(isMobile && navigator.canShare){
+      const file = new File([blob], fname, { type: "image/png" });
+      if(navigator.canShare({ files:[file] })){
+        try { await navigator.share({ files:[file], title:"단어시험 결과지" }); return; } catch(e){ /* 취소/실패 시 다운로드로 */ }
+      }
     }
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = fname; a.click();
-    URL.revokeObjectURL(a.href);
+    a.href = URL.createObjectURL(blob); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
   }, "image/png");
 };
 
