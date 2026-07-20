@@ -143,7 +143,7 @@ async function vHome(v){
       q('mock_attempts?select=id,student_id,exam_id,score,total,taken_at&order=taken_at.desc'),
       q('mock_exams?select=id,ord,label&order=ord'),
       q('grammar_attempts?select=id,student_id,test_id,score,total,taken_at&order=taken_at.desc'),
-      q('grammar_tests?select=id,ord,label&order=ord'),
+      q('grammar_tests?select=id,label&order=id'),
     ]);
     cache.home = {st:st.rows, at:at.rows, ma:ma.rows, ex:ex.rows, gr:gr.rows, gt:gt.rows};
   }
@@ -264,7 +264,7 @@ async function vMock(v, detailId){
 /* ================= 문법시험 ================= */
 async function vGram(v, detailId){
   if(!cache.gTests){
-    cache.gTests = (await q('grammar_tests?select=id,ord,label,unit_from,unit_to,active&order=ord')).rows;
+    cache.gTests = (await q('grammar_tests?select=id,label,unit_from,unit_to,active&order=id')).rows;
   }
   if(!cache.gQ){
     const gq = await q('grammar_questions?select=id,unit_no,level,stem,answer,qtype');
@@ -295,7 +295,7 @@ async function vGram(v, detailId){
   const rows = at.rows.map(a=>{
     const t = tMap[a.test_id]||{};
     return '<tr class="click" onclick="vGram(document.querySelector(\'#view\'),\''+a.id+'\')">'
-      +'<td><b>'+esc(a.students?a.students.name:'?')+'</b></td><td>'+esc(t.label||('#'+(t.ord||'?')))+'</td>'
+      +'<td><b>'+esc(a.students?a.students.name:'?')+'</b></td><td>'+esc(t.label||('#'+(t.id||'?')))+'</td>'
       +'<td>'+a.score+'/'+a.total+' ('+pct(a.score,a.total)+'%)</td><td class="muted">'+dt(a.taken_at)+'</td></tr>';
   }).join('');
   /* 문항별 오답률 (통계 제외 계정 제외) */
