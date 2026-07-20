@@ -186,8 +186,12 @@ async function buildTest(student, hist){
 
   /* ===== 이후 회차: 신규 단원 + 복습 ===== */
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
-  let nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;   // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
-  if(student.name==="신예지" && round===2) nCount = 2; // [임시 보강] 2026-07-14(화) 결시: 2회차에 2·3단원 출제, 응시 완료 후 자동 무효
+  let nCount;
+  if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
+    nCount = (dowKST === 5) ? 2 : 1;
+  } else {                                    // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
+    nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;
+  }
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
