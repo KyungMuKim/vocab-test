@@ -55,7 +55,7 @@
 
 <div class="wrap" id="app" style="display:none">
   <h1>통합 관리자 페이지 <span class="muted" style="font-weight:400">v1 · 읽기 전용</span></h1>
-  <div class="sub">단어시험 · 미니모의고사 통합 현황</div>
+  <div class="sub">단어시험 · 미니모의고사 · 문법시험 통합 현황</div>
   <div class="ro-banner">🔒 이 페이지는 <b>읽기 전용</b>입니다. 어떤 버튼을 눌러도 데이터가 변경·삭제되지 않습니다.</div>
   <div class="tabs" id="tabs"></div>
   <div id="view"><div class="center">불러오는 중…</div></div>
@@ -65,7 +65,7 @@
 /* ================= 설정 ================= */
 const SB_URL = 'https://xtxuozcbeqruuigeijsz.supabase.co/rest/v1/';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM';
-const PIN = '2580';
+const PIN = '5204';
 /* 반 통계(오답률 집계 등)에서 제외할 계정 — 개별 기록·비교는 그대로 표시됨 */
 const EXCLUDE_NAMES = ['실험용','실험','테스트','test','딘','안성민'];
 const isExcluded = n => EXCLUDE_NAMES.includes(String(n||'').trim());
@@ -100,6 +100,7 @@ const TABS = [
   {id:'vocab', name:'단어시험'},
   {id:'review', name:'감수 대기'},
   {id:'mock', name:'미니모의고사'},
+  {id:'gram', name:'문법시험'},
   {id:'backup', name:'백업'},
 ];
 let cur = 'home';
@@ -128,6 +129,7 @@ async function render(){
     else if(cur==='vocab') await vVocab(v);
     else if(cur==='review') await vReview(v);
     else if(cur==='mock') await vMock(v);
+    else if(cur==='gram') await vGram(v);
     else if(cur==='backup') vBackup(v);
   }catch(e){ v.innerHTML = '<div class="center">⚠️ '+esc(e.message)+'</div>'; }
 }
@@ -135,31 +137,37 @@ async function render(){
 /* ================= 개요 ================= */
 async function vHome(v){
   if(!cache.home){
-    const [st, at, ma, ex] = await Promise.all([
+    const [st, at, ma, ex, gr, gt] = await Promise.all([
       q('students?select=id,name,class_day,active&order=name'),
       q('attempts?select=id,student_id,round,new_score,new_total,rev_score,rev_total,taken_at&order=taken_at.desc'),
       q('mock_attempts?select=id,student_id,exam_id,score,total,taken_at&order=taken_at.desc'),
       q('mock_exams?select=id,ord,label&order=ord'),
+      q('grammar_attempts?select=id,student_id,test_id,score,total,taken_at&order=taken_at.desc'),
+      q('grammar_tests?select=id,ord,label&order=ord'),
     ]);
-    cache.home = {st:st.rows, at:at.rows, ma:ma.rows, ex:ex.rows};
+    cache.home = {st:st.rows, at:at.rows, ma:ma.rows, ex:ex.rows, gr:gr.rows, gt:gt.rows};
   }
-  const {st, at, ma, ex} = cache.home;
+  const {st, at, ma, ex, gr, gt} = cache.home;
   const exMap = Object.fromEntries(ex.map(e=>[e.id,e]));
+  const gtMap = Object.fromEntries(gt.map(t=>[t.id,t]));
   const rows = st.map(s=>{
     const a = at.find(x=>x.student_id===s.id);
     const m = ma.find(x=>x.student_id===s.id);
+    const g = gr.find(x=>x.student_id===s.id);
     const aTxt = a ? a.round+'회차 · 신규 '+a.new_score+'/'+a.new_total+(a.rev_total?' · 복습 '+a.rev_score+'/'+a.rev_total:'')+' <span class="muted">'+dt(a.taken_at)+'</span>' : '<span class="muted">기록 없음</span>';
     const mTxt = m ? (exMap[m.exam_id]?esc(exMap[m.exam_id].label)+' · ':'')+m.score+'/'+m.total+' <span class="muted">'+dt(m.taken_at)+'</span>' : '<span class="muted">기록 없음</span>';
-    return '<tr><td><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.class_day||'')+(s.active===false?' · 비활성':'')+'</div></td><td>'+aTxt+'</td><td>'+mTxt+'</td></tr>';
+    const gTxt = g ? (gtMap[g.test_id]?esc(gtMap[g.test_id].label)+' · ':'')+g.score+'/'+g.total+' <span class="muted">'+dt(g.taken_at)+'</span>' : '<span class="muted">기록 없음</span>';
+    return '<tr><td><b>'+esc(s.name)+'</b><div class="muted">'+esc(s.class_day||'')+(s.active===false?' · 비활성':'')+'</div></td><td>'+aTxt+'</td><td>'+mTxt+'</td><td>'+gTxt+'</td></tr>';
   }).join('');
   v.innerHTML =
     '<div class="grid" style="margin-bottom:12px">'
     +'<div class="stat">학생 <b>'+st.length+'</b>명</div>'
     +'<div class="stat">단어시험 응시 <b>'+at.length+'</b>건</div>'
     +'<div class="stat">모의고사 응시 <b>'+ma.length+'</b>건</div>'
+    +'<div class="stat">문법시험 응시 <b>'+gr.length+'</b>건</div>'
     +'<div class="stat">감수 대기 <b style="color:var(--amber)">'+ (cache.nrCount||0) +'</b>문항</div>'
     +'</div>'
-    +'<div class="card"><h2>학생별 최근 기록</h2><table><thead><tr><th>학생</th><th>단어시험 (최근)</th><th>미니모의고사 (최근)</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    +'<div class="card"><h2>학생별 최근 기록</h2><table><thead><tr><th>학생</th><th>단어시험 (최근)</th><th>미니모의고사 (최근)</th><th>문법시험 (최근)</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 /* ================= 단어시험 ================= */
@@ -253,6 +261,65 @@ async function vMock(v, detailId){
     +(worst.length? '<div class="card"><h2>오답률 높은 문항 TOP 10 <span class="muted" style="font-weight:400">(응시 2명 이상)</span></h2><table><thead><tr><th>회차</th><th>문항</th><th></th><th>오답률</th></tr></thead><tbody>'+wRows+'</tbody></table></div>' : '');
 }
 
+/* ================= 문법시험 ================= */
+async function vGram(v, detailId){
+  if(!cache.gTests){
+    cache.gTests = (await q('grammar_tests?select=id,ord,label,unit_from,unit_to,active&order=ord')).rows;
+  }
+  if(!cache.gQ){
+    const gq = await q('grammar_questions?select=id,unit_no,level,stem,answer,qtype');
+    cache.gQ = Object.fromEntries(gq.rows.map(x=>[x.id,x]));
+  }
+  const tMap = Object.fromEntries(cache.gTests.map(t=>[t.id,t]));
+  const qMap = cache.gQ;
+  if(detailId){
+    const a = (cache.gAttempts||[]).find(x=>x.id===detailId) || {};
+    const t = tMap[a.test_id]||{};
+    const it = await q('grammar_attempt_items?select=seq,question_id,unit_no,level,answer,correct&attempt_id=eq.'+detailId+'&order=seq');
+    const rows = it.rows.map(x=>{
+      const gq = qMap[x.question_id]||{};
+      const stem = String(gq.stem||'').replace(/\s+/g,' ').slice(0,60);
+      return '<tr><td>'+x.seq+'</td>'
+        +'<td>U'+(x.unit_no??gq.unit_no??'')+(x.level?' · '+esc(x.level):'')+(stem?'<div class="muted">'+esc(stem)+'</div>':'')+'</td>'
+        +'<td>'+esc(x.answer||'(무답)')+'</td>'
+        +'<td>'+esc(String(gq.answer??''))+'</td>'
+        +'<td>'+(x.correct?'<span class="tag t-ok">O</span>':'<span class="tag t-no">X</span>')+'</td></tr>';
+    }).join('');
+    v.innerHTML = '<button class="btn btn-back" onclick="go(\'gram\')">← 목록으로</button>'
+      +'<div class="card"><h2>'+esc(a.students?a.students.name:'?')+' · '+esc(t.label||'')+' ('+(a.score??'?')+'/'+(a.total??'?')+')</h2>'
+      +'<table><thead><tr><th>#</th><th>문항</th><th>학생 답</th><th>정답</th><th>판정</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    return;
+  }
+  const at = await q('grammar_attempts?select=id,student_id,test_id,score,total,duration_sec,taken_at,students(name)&order=taken_at.desc');
+  cache.gAttempts = at.rows;
+  const rows = at.rows.map(a=>{
+    const t = tMap[a.test_id]||{};
+    return '<tr class="click" onclick="vGram(document.querySelector(\'#view\'),\''+a.id+'\')">'
+      +'<td><b>'+esc(a.students?a.students.name:'?')+'</b></td><td>'+esc(t.label||('#'+(t.ord||'?')))+'</td>'
+      +'<td>'+a.score+'/'+a.total+' ('+pct(a.score,a.total)+'%)</td><td class="muted">'+dt(a.taken_at)+'</td></tr>';
+  }).join('');
+  /* 문항별 오답률 (통계 제외 계정 제외) */
+  const exAttIds = new Set(at.rows.filter(x=>isExcluded(x.students&&x.students.name)).map(x=>x.id));
+  const allIt = await q('grammar_attempt_items?select=attempt_id,question_id,unit_no,level,correct');
+  const agg = {};
+  allIt.rows.filter(x=>!exAttIds.has(x.attempt_id)).forEach(x=>{
+    const k = x.question_id;
+    agg[k] = agg[k]||{qid:x.question_id,unit:x.unit_no,level:x.level,n:0,w:0};
+    agg[k].n++; if(!x.correct) agg[k].w++;
+  });
+  const worst = Object.values(agg).filter(a=>a.n>=2).sort((a,b)=>(b.w/b.n)-(a.w/a.n)).slice(0,10);
+  const wRows = worst.map(a=>{
+    const gq = qMap[a.qid]||{};
+    const stem = String(gq.stem||'').replace(/\s+/g,' ').slice(0,50);
+    const p = pct(a.w,a.n);
+    return '<tr><td>U'+(a.unit??gq.unit_no??'')+(a.level?' · '+esc(a.level):'')+'</td><td class="muted" style="max-width:280px">'+esc(stem)+'</td><td style="min-width:120px"><div class="bar"><i style="width:'+p+'%"></i></div></td><td>'+p+'% ('+a.w+'/'+a.n+')</td></tr>';
+  }).join('');
+  v.innerHTML = '<div class="card"><h2>문법시험 응시 기록 ('+at.rows.length+'건) <span class="muted" style="font-weight:400">— 행을 누르면 답안 상세</span></h2>'
+    +(at.rows.length? '<table><thead><tr><th>학생</th><th>시험</th><th>점수</th><th>일시</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="center">응시 기록이 아직 없습니다.</div>')+'</div>'
+    +(worst.length? '<div class="card"><h2>오답률 높은 문항 TOP 10 <span class="muted" style="font-weight:400">(응시 2명 이상)</span></h2><table><thead><tr><th>단원</th><th>문항</th><th></th><th>오답률</th></tr></thead><tbody>'+wRows+'</tbody></table></div>' : '');
+}
+
 /* ================= 백업 ================= */
 function vBackup(v){
   const tables = [
@@ -263,12 +330,16 @@ function vBackup(v){
     {t:'mock_exams', sel:'*', note:'모의고사 회차·정답표'},
     {t:'mock_attempts', sel:'*', note:'모의고사 응시'},
     {t:'mock_attempt_items', sel:'*', note:'모의고사 문항별 답안'},
+    {t:'grammar_tests', sel:'*', note:'문법시험 회차·구성'},
+    {t:'grammar_questions', sel:'*', note:'문법 문항 DB'},
+    {t:'grammar_attempts', sel:'*', note:'문법시험 응시'},
+    {t:'grammar_attempt_items', sel:'*', note:'문법시험 문항별 답안'},
   ];
   v.innerHTML = '<div class="card"><h2>데이터 백업 (JSON 다운로드)</h2>'
     +'<p class="muted" style="margin-bottom:10px">감수·정정 등 데이터를 변경하는 작업 전에 백업해 두면, 문제가 생겨도 이 파일로 복원할 수 있습니다. 다운로드는 조회만 하며 서버 데이터는 변경하지 않습니다.</p>'
     +tables.map((x,i)=>'<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)">'
       +'<button class="btn" onclick="dl('+i+')">다운로드</button><div><b>'+x.t+'</b> <span class="muted">— '+x.note+'</span> <span class="muted" id="dl'+i+'"></span></div></div>').join('')
-    +'<div style="margin-top:12px"><button class="btn" onclick="dlAll()">📦 전체 한번에 (파일 7개)</button></div></div>';
+    +'<div style="margin-top:12px"><button class="btn" onclick="dlAll()">📦 전체 한번에 (파일 '+tables.length+'개)</button></div></div>';
   window.__bkTables = tables;
 }
 async function dl(i){
