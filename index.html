@@ -55,7 +55,8 @@ const CONFIG = {
   SUPABASE_URL: "https://xtxuozcbeqruuigeijsz.supabase.co",
   SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM",
   TEACHER_PIN: "2580",              // 선생님 대시보드 비밀번호
-  NEW_UNITS: { "화": 2, "목": 1 },   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
+  NEW_UNITS: { "화": 2, "목": 1 },
+  SUPPLEMENTS: { "신예지": { round: 4, units: [5,6] } },  // 결시 보충: 빠진 신규 단원만 추가 응시→기존 attempt에 병합   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
   MAX_UNIT: 60,
   DIAG_COUNT: 50,                   // 진단고사(첫 시험) 전범위 랜덤 문항 수
   SR_CAP: 20,                       // 회차당 SR(주기 복습) 최대 문항 수 — 취약 단어 우선
@@ -175,6 +176,22 @@ async function loadHistory(studentId){
 async function buildTest(student, hist){
   const round = hist.attempts.length;
 
+  /* ===== 보충시험(결시 보정): 특정 회차에 빠진 신규 단원만 추가 응시 → 기존 attempt에 병합 ===== */
+  const _supp = (CONFIG.SUPPLEMENTS||{})[student.name];
+  if(_supp){
+    const _tgt = hist.attempts.find(a=>a.round===_supp.round);
+    if(_tgt){
+      const _have = new Set(_tgt.new_units||[]);
+      const _missing = _supp.units.filter(u=>!_have.has(u));
+      if(_missing.length){
+        const { data: _nw, error: _e } = await sb.from("words").select("id,en,ko,unit").in("unit", _missing);
+        if(_e) err(_e);
+        const _items = shuffle(_nw).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
+        return { round: _supp.round, newUnits: _missing, items: _items, review: [], supplement: true, mergeId: _tgt.id };
+      }
+    }
+  }
+
   /* ===== round 0 = 진단고사: 능률보카 전범위에서 랜덤 DIAG_COUNT문항 ===== */
   if(round === 0){
     const { data: allWords, error } = await sb.from("words").select("id,en,ko,unit").lte("unit", 60);
@@ -192,6 +209,8 @@ async function buildTest(student, hist){
   } else {                                    // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
     nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;
   }
+  /* 결시 사전 보정: 엄선우 4회차는 요일 무관 반과 동일 신규 2단원 */
+  if(student.name==="엄선우" && round===4) nCount = 2;
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
@@ -370,7 +389,7 @@ window.proceedStudent = async function(student, resume){
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
-      head = `📘 <b>${test.round}회차</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
+      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
            + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
@@ -441,10 +460,47 @@ function reviewScreen(){
 }
 window.flip = function(i){ S.graded[i].correct = !S.graded[i].correct; S.graded[i].review = false; reviewScreen(); };
 
+/* ===== 보충시험 저장: 기존 회차 attempt에 신규 문항 병합(멱등) ===== */
+async function submitSupplement(){
+  try{
+    const tgtId = S.test.mergeId, units = S.test.newUnits;
+    const nw = S.graded.filter(g=>g.type==="new");
+    const add = nw.filter(g=>g.correct).length, addTot = nw.length;
+    /* 재시도 대비: 대상 단원의 기존 신규문항 제거 후 재삽입 */
+    await sb.from("attempt_items").delete().eq("attempt_id", tgtId).in("unit", units).eq("item_type","new");
+    const { data: lastIt } = await sb.from("attempt_items").select("seq").eq("attempt_id", tgtId).order("seq",{ascending:false}).limit(1);
+    const base = (lastIt && lastIt.length ? lastIt[0].seq : -1) + 1;
+    const { error: e2 } = await sb.from("attempt_items").insert(S.graded.map((g,i)=>({
+      attempt_id: tgtId, word_id: g.word_id, en: g.en, unit: g.unit,
+      item_type: g.type==="sr" ? "random" : g.type,
+      answer: g.answer, correct: g.correct, needs_review: g.review, seq: base + i
+    })));
+    if(e2) throw e2;
+    /* 신규 점수/단원을 실제 저장된 신규문항에서 재계산(병합) */
+    const { data: allNew } = await sb.from("attempt_items").select("correct,unit").eq("attempt_id", tgtId).eq("item_type","new");
+    const nScore = allNew.filter(x=>x.correct).length, nTotal = allNew.length;
+    const nUnits = [...new Set(allNew.map(x=>x.unit).filter(Boolean))].sort((a,b)=>a-b);
+    await sb.from("attempts").update({ new_units:nUnits, new_score:nScore, new_total:nTotal }).eq("id", tgtId);
+    clearDraft(S.student.id);
+    S.submitting = false;
+    app.innerHTML = `
+     <div class="card">
+       <h2>보충 저장 완료 ✅</h2>
+       <div class="score-big">${add} / ${addTot} <span class="small">보충 신규</span></div>
+       <div class="pill">이번 회차 신규 합산: <b>${nScore} / ${nTotal}</b> (${nUnits.map(u=>u+"단원").join(", ")})<br><span class="small">기존 ${S.test.round}회차 기록에 합쳐졌어요. 복습은 이전 응시로 반영됨.</span></div>
+       <button class="btn-ghost" onclick="home()">처음으로</button>
+     </div>`;
+  }catch(_err){
+    S.submitting = false;
+    app.innerHTML = `<div class="card"><h2>저장 실패</h2><div class="flag red">${esc(String(_err.message||_err))}</div><button class="btn-primary" onclick="submitResult()">다시 시도</button></div>`;
+  }
+}
+
 window.submitResult = async function(){
   if(S.submitting) return;
   S.submitting = true;
   app.innerHTML = `<div class="card"><h2>저장 중...</h2></div>`;
+    if(S.test && S.test.supplement){ await submitSupplement(); return; }
   try{
     const nw = S.graded.filter(g=>g.type==="new"), rv = S.graded.filter(g=>g.type!=="new");
     const scores = {
