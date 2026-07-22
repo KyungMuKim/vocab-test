@@ -207,10 +207,8 @@ async function buildTest(student, hist){
   if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
     nCount = (dowKST === 5) ? 2 : 1;
   } else {                                    // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
-    nCount = CONFIG.NEW_UNITS[dowKST === 2 ? "화" : "목"] || 1;
+    nCount = (round % 2 === 0) ? 2 : 1;  // 통합반: 반 진도(회차) 기준 — 짝수회차=화=2단원, 홀수회차=목=1단원 (결시로 다른 요일에 봐도 반과 동일 범위)
   }
-  /* 결시 사전 보정: 엄선우 4회차는 요일 무관 반과 동일 신규 2단원 */
-  if(student.name==="엄선우" && round===4) nCount = 2;
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
