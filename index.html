@@ -67,7 +67,6 @@ const CONFIG = {
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
   REVIEW_MAX_BY_NAME: { "서승원": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
-  SKIP_BY_NAME: { "강준호": { units: [7], offset: 1 } },  // 회차 스킵: {이름:{units:[제외 단원], offset:n}} — 결시로 밀린 학생을 반 진도에 점프. 회차=attempts.length+offset, units는 신규 출제에서 영구 제외(전범위 probe로는 등장 가능). 2026-07-30 강준호 r5([7]) 스킵 → 8/2(일) 보충에서 6회차 [8,9] 응시, 이후 반과 동기 유지(Dean 지시, 제거 금지)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
@@ -127,6 +126,7 @@ function autoGrade(ko, ans){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="개인" ? "개인" : (d||"");
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
@@ -182,8 +182,7 @@ async function loadHistory(studentId){
 
 /* 다음 시험 구성 */
 async function buildTest(student, hist){
-  const _skip = (CONFIG.SKIP_BY_NAME||{})[student.name];
-  const round = hist.attempts.length + (_skip ? _skip.offset : 0);  // 회차 스킵 오프셋 (2026-07-30)
+  const round = hist.attempts.length;
 
   /* ===== 보충시험(결시 보정): 특정 회차에 빠진 신규 단원만 추가 응시 → 기존 attempt에 병합 ===== */
   const _supp = (CONFIG.SUPPLEMENTS||{})[student.name];
@@ -220,7 +219,7 @@ async function buildTest(student, hist){
     nCount = (round % 2 === 0) ? 2 : 1;  // 통합반: 반 진도(회차) 기준 — 짝수회차=화=2단원, 홀수회차=목=1단원 (결시로 다른 요일에 봐도 반과 동일 범위)
   }
   const remaining = [];
-  for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !(_skip && _skip.units.includes(u))) remaining.push(u);
+  for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
 
   let items = [];
@@ -334,7 +333,7 @@ window.pickStudent = function(student){
      <h2>본인 확인</h2>
      <div class="sub">아래 이름이 <b>본인</b>이 맞는지 꼭 확인하세요.</div>
      <div class="word" style="font-size:2.4rem; text-align:center">${esc(student.name)}</div>
-     <div class="pill">‘<b>${esc(student.name)}</b> (${student.class_day}요일반)’ 학생 본인이 맞나요?<br>다른 사람 이름이면 아래 <b>‘아니에요’</b>를 눌러 다시 선택하세요.</div>
+     <div class="pill">‘<b>${esc(student.name)}</b> (${classLabel(student.class_day)})’ 학생 본인이 맞나요?<br>다른 사람 이름이면 아래 <b>‘아니에요’</b>를 눌러 다시 선택하세요.</div>
      <div class="row" style="justify-content:center">
        <input type="password" id="pinInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"
          placeholder="비밀번호 4자리" style="text-align:center; font-size:1.3rem; letter-spacing:.35em; width:190px; padding:10px; border:2px solid #cbd5e1; border-radius:10px">
@@ -395,11 +394,11 @@ window.proceedStudent = async function(student, resume){
       ? `<div class="flag amber">⚠️ 방금 전(${fmtDate(last.taken_at)})에 이미 응시한 기록이 있어요. 본인·회차가 맞는지 다시 확인하세요.</div>` : "";
     let head;
     if(test.diag){
-      head = `📘 <b>진단고사</b> (${student.class_day}요일반) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
+      head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
-      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}</b> (${student.class_day}요일반) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
+      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
            + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
@@ -696,7 +695,7 @@ window.teacherFlip = async function(itemId, attemptId){
 window.reassignStart = async function(attemptId){
   const { data: students, error } = await sb.from("students").select("*").order("name");
   if(error) err(error);
-  const opts = students.map(s=>`<option value="${s.id}">${esc(s.name)} (${s.class_day})</option>`).join("");
+  const opts = students.map(s=>`<option value="${s.id}">${esc(s.name)} (${classLabel(s.class_day)})</option>`).join("");
   const panel = `<div class="statbox">↔ <b>이 응시를 옮길 학생</b>을 선택하세요 (잘못된 계정으로 친 경우):<br>
     <div class="row"><select id="reTo" style="flex:2">${opts}</select>
       <button class="btn-primary btn-sm" style="width:auto" onclick="reassignDo('${attemptId}')">이동 확인</button>
@@ -842,7 +841,7 @@ window.dashStudents = async function(){
   if(!pinErr) (pinRows||[]).forEach(r=>{ pins[r.student_id]=r.pin; });
   const rows = data.map(s=>`
     <tr>
-      <td><b>${esc(s.name)}</b></td><td>${s.class_day}요일반</td>
+      <td><b>${esc(s.name)}</b></td><td>${classLabel(s.class_day)}</td>
       <td><b>${pins[s.id]||"—"}</b> <button class="btn-ghost btn-sm" onclick="changePin('${s.id}','${esc(s.name)}')">변경</button></td>
       <td>${s.active?"활동":"<span class='small'>숨김</span>"}</td>
       <td><button class="btn-ghost btn-sm" onclick="toggleStudent('${s.id}',${!s.active})">${s.active?"숨기기":"복구"}</button></td>
@@ -851,7 +850,7 @@ window.dashStudents = async function(){
     ${pinErr?`<div class="flag amber">PIN 불러오기 실패: ${esc(pinErr.message)} — supabase_4_학생PIN_공용.sql 을 실행했는지 확인하세요.</div>`:""}
     <div class="row">
       <input type="text" id="newName" placeholder="이름" style="flex:2; margin:0">
-      <select id="newDay"><option value="화">화요일반</option><option value="목">목요일반</option></select>
+      <select id="newDay"><option value="화">씨앤씨 중1 Stan반</option><option value="면접">면접반</option><option value="개인">개인</option></select>
       <button class="btn-ghost" onclick="addStudent()">추가</button>
     </div>
     <table><tr><th>이름</th><th>반</th><th>비밀번호</th><th>상태</th><th></th></tr>${rows}</table>`);
