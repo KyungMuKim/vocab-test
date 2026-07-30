@@ -67,6 +67,7 @@ const CONFIG = {
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
   REVIEW_MAX_BY_NAME: { "서승원": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
+  SKIP_BY_NAME: { "강준호": { units: [7], offset: 1 } },  // 회차 스킵: {이름:{units:[제외 단원], offset:n}} — 결시로 밀린 학생을 반 진도에 점프. 회차=attempts.length+offset, units는 신규 출제에서 영구 제외(전범위 probe로는 등장 가능). 2026-07-30 강준호 r5([7]) 스킵 → 8/2(일) 보충에서 6회차 [8,9] 응시, 이후 반과 동기 유지(Dean 지시, 제거 금지)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
@@ -181,7 +182,8 @@ async function loadHistory(studentId){
 
 /* 다음 시험 구성 */
 async function buildTest(student, hist){
-  const round = hist.attempts.length;
+  const _skip = (CONFIG.SKIP_BY_NAME||{})[student.name];
+  const round = hist.attempts.length + (_skip ? _skip.offset : 0);  // 회차 스킵 오프셋 (2026-07-30)
 
   /* ===== 보충시험(결시 보정): 특정 회차에 빠진 신규 단원만 추가 응시 → 기존 attempt에 병합 ===== */
   const _supp = (CONFIG.SUPPLEMENTS||{})[student.name];
@@ -218,7 +220,7 @@ async function buildTest(student, hist){
     nCount = (round % 2 === 0) ? 2 : 1;  // 통합반: 반 진도(회차) 기준 — 짝수회차=화=2단원, 홀수회차=목=1단원 (결시로 다른 요일에 봐도 반과 동일 범위)
   }
   const remaining = [];
-  for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u)) remaining.push(u);
+  for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !(_skip && _skip.units.includes(u))) remaining.push(u);
   const newUnits = remaining.slice(0, nCount);
 
   let items = [];
