@@ -65,11 +65,12 @@ const CONFIG = {
   DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
   SR_INTERVALS: [1,4,8,16],         // streak별 재출제 간격(회차): 오답 다음 시험, 첫 정답 4(2주), 2연속 8(4주), 3연속+ 16(8주)
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
-  REVIEW_MAX_BY_NAME: { "서승원": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지)
+  REVIEW_MAX_BY_NAME: { "서승원": 40, "김규현": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지 / 2026-08-03 Dean: 규현도 동일 — 리셋 후 풀 재팽창 시 전멸 방지)
   DIAG_PLUS_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { units: [10], diagCount: 30 } },  // 중도 합류: 첫 시험을 "진단고사 + 신규 단원" 동시 응시로 구성 {student_id:{units:[신규단원], diagCount:진단문항수}} — attempts가 0건일 때만 적용(둘째 시험부터 자동 소거). 2026-08-03 황서율(8/4 합류: 10단원 + 진단 30문항, Dean 지시)
   CATCHUP_BY_ID: { "c763cac7-ccb1-4300-8d5c-928601d78256": { roundOffset: 1, skipUnits: [7] },
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
-  AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
+  AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
+                   "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
