@@ -66,7 +66,9 @@ const CONFIG = {
   SR_INTERVALS: [1,4,8,16],         // streak별 재출제 간격(회차): 오답 다음 시험, 첫 정답 4(2주), 2연속 8(4주), 3연속+ 16(8주)
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
   REVIEW_MAX_BY_NAME: { "서승원": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지)
-  CATCHUP_BY_ID: { "c763cac7-ccb1-4300-8d5c-928601d78256": { roundOffset: 1, skipUnits: [7] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
+  DIAG_PLUS_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { units: [10], diagCount: 30 } },  // 중도 합류: 첫 시험을 "진단고사 + 신규 단원" 동시 응시로 구성 {student_id:{units:[신규단원], diagCount:진단문항수}} — attempts가 0건일 때만 적용(둘째 시험부터 자동 소거). 2026-08-03 황서율(8/4 합류: 10단원 + 진단 30문항, Dean 지시)
+  CATCHUP_BY_ID: { "c763cac7-ccb1-4300-8d5c-928601d78256": { roundOffset: 1, skipUnits: [7] },
+                   "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
@@ -131,14 +133,14 @@ const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d===
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
-const roundLabel = a => isDiag(a) ? "진단고사" : (a.round)+"회차";
+const roundLabel = a => isDiag(a) ? "진단고사" : (a.round === 0 ? "진단+신규" : (a.round)+"회차");
 const newLabel = a => isDiag(a) ? "진단" : "신규";
 
 /* ===== 진행 중 시험 임시저장 (새로고침·실수 대비) ===== */
 const draftKey = id => "vtdraft_" + id;
 function saveDraft(){
   try{ localStorage.setItem(draftKey(S.student.id), JSON.stringify({
-    round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag,
+    round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag, diagPlus:!!S.test.diagPlus,
     queue:S.queue, answers:S.answers, idx:S.idx, ts:Date.now(), name:S.student.name
   })); }catch(e){}
 }
@@ -156,6 +158,8 @@ async function loadHistory(studentId){
     items = data;
   }
   const roundOf = Object.fromEntries(attempts.map(a=>[a.id, a.round]));
+  /* 순수 진단고사 attempt(신규 단원 없음) 여부 — 진단+신규 동시 응시(DIAG_PLUS)의 신규 파트를 '원래 알던 단어'로 오인하지 않도록 */
+  const pureDiag = Object.fromEntries(attempts.map(a=>[a.id, ((a.new_units||[]).length === 0)]));
   /* 사면(clean slate): AMNESTY_BY_ID[student_id]=R → R회차 이전 기록을 SR 계산에서만 무시(단 R회차 신규 파트는 유지). 기록/결과지/통계는 그대로 (2026-07-27) */
   const _amR = (CONFIG.AMNESTY_BY_ID||{})[studentId];
   if(_amR !== undefined){
@@ -168,7 +172,7 @@ async function loadHistory(studentId){
     const st = state[it.en] || (state[it.en] = { en: it.en, word_id: it.word_id, unit: it.unit, streak: 0, lastRound: 0, miss: 0, n: 0, known: false });
     if(it.word_id) st.word_id = it.word_id;
     /* 원래 알던 단어: 첫 노출(진단 or 전범위 probe)에서 바로 정답 → KNOWN_INTERVAL(3개월) 적용 */
-    st.known = (st.n === 0 && it.correct && (roundOf[it.attempt_id] === 0 || it.item_type === "random"));
+    st.known = (st.n === 0 && it.correct && ((roundOf[it.attempt_id] === 0 && pureDiag[it.attempt_id]) || it.item_type === "random"));
     st.n++;
     st.lastRound = roundOf[it.attempt_id];
     if(it.correct) st.streak++;
@@ -187,6 +191,23 @@ async function buildTest(student, hist){
   const _cu = (CONFIG.CATCHUP_BY_ID||{})[student.id] || {};
   const _skip = _cu.skipUnits || [];
   const round = hist.attempts.length + (_cu.roundOffset || 0);
+
+  /* ===== 중도 합류 첫 시험: 진단고사 + 신규 단원 동시 응시 (DIAG_PLUS_BY_ID) =====
+     신규 = 지정 단원(item_type "new" → new_score), 진단 = 전범위 랜덤 diagCount문항(item_type "random" → rev_score).
+     attempts가 0건일 때만 적용되므로 둘째 시험부터는 자동으로 CATCHUP_BY_ID 정규 흐름을 탐. */
+  const _dp = (CONFIG.DIAG_PLUS_BY_ID||{})[student.id];
+  if(_dp && hist.attempts.length === 0){
+    const { data: _nw, error: _e1 } = await sb.from("words").select("id,en,ko,unit").in("unit", _dp.units);
+    if(_e1) err(_e1);
+    const _items = shuffle(_nw).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
+    const _nid = new Set(_items.map(w=>w.word_id));
+    const { data: _all, error: _e2 } = await sb.from("words").select("id,en,ko,unit").lte("unit", 60);
+    if(_e2) err(_e2);
+    const _rev = shuffle((_all||[]).filter(w=>!_nid.has(w.id)))
+      .slice(0, _dp.diagCount || CONFIG.DIAG_COUNT)
+      .map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"random" }));
+    return { round: 0, newUnits: _dp.units, items: _items, review: _rev, diagPlus: true };
+  }
 
   /* ===== 보충시험(결시 보정): 특정 회차에 빠진 신규 단원만 추가 응시 → 기존 attempt에 병합 ===== */
   const _supp = (CONFIG.SUPPLEMENTS||{})[student.name];
@@ -298,12 +319,15 @@ function statBlock(cohort, myId, f){
 /* att: attempt 레코드, day: 학생 반(요일). 같은 회차·같은 반 계정만 비교. */
 async function roundStats(att, day){
   const { data: peers, error } = await sb.from("attempts")
-    .select("id,round,new_score,new_total,rev_score,rev_total,students(name,class_day,active)")
+    .select("id,round,new_units,new_score,new_total,rev_score,rev_total,students(name,class_day,active)")
     .eq("round", att.round);
   if(error || !peers) return null;
   const ex = CONFIG.EXCLUDE_NAMES;
+  /* 0회차는 순수 진단고사와 '진단+신규'(중도 합류)를 섞어 비교하지 않음 — 만점 기준이 달라 평균이 왜곡됨 */
+  const _pd = a => ((a.new_units||[]).length === 0);
   const cohort = peers.filter(p => p.students && p.students.class_day===day && p.students.active!==false
-    && !ex.some(nm => (p.students.name||"").includes(nm)));
+    && !ex.some(nm => (p.students.name||"").includes(nm))
+    && (att.round !== 0 || _pd(p) === _pd(att)));
   if(!cohort.length) return null;
   const out = { n: cohort.length };
   out.new = statBlock(cohort, att.id, p=>p.new_score);           // 신규: 정답 개수 기준
@@ -378,7 +402,7 @@ window.proceedStudent = async function(student, resume){
     const d = loadDraft(student.id);
     if(d && d.queue && d.queue.length){
       S = { student, hist,
-        test:{ round:d.round, newUnits:d.newUnits, diag:d.diag,
+        test:{ round:d.round, newUnits:d.newUnits, diag:d.diag, diagPlus:d.diagPlus,
                 items:d.queue.filter(q=>q.type==="new"), review:d.queue.filter(q=>q.type!=="new") },
         queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0 };
       question();
@@ -399,6 +423,10 @@ window.proceedStudent = async function(student, resume){
     let head;
     if(test.diag){
       head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
+    } else if(test.diagPlus){
+      head = `📘 <b>진단고사 + 신규</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (<b>${test.items.length}문항</b>)`
+           + `<br>🧭 진단: 능률보카 전범위 랜덤 <b>${test.review.length}문항</b>`
+           + `<br><span class="small">앞부분은 이번에 공부한 단원, 뒷부분은 실력 측정용 진단이에요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
@@ -424,7 +452,8 @@ function question(){
   const i = S.idx, q = S.queue[i], total = S.queue.length;
   const badge = q.type==="new" ? (S.test.diag?'<span class="badge b-diag">진단</span>':'<span class="badge b-new">신규</span>')
     : q.type==="wrong" ? '<span class="badge b-wrong">복습·오답</span>'
-    : q.type==="sr" ? '<span class="badge b-random">복습·주기</span>' : '<span class="badge b-random">복습·랜덤</span>';
+    : q.type==="sr" ? '<span class="badge b-random">복습·주기</span>'
+    : S.test.diagPlus ? '<span class="badge b-diag">진단</span>' : '<span class="badge b-random">복습·랜덤</span>';
   app.innerHTML = `
    <div class="card">
      <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
