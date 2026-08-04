@@ -65,7 +65,6 @@
 /* ================= 설정 ================= */
 const SB_URL = 'https://xtxuozcbeqruuigeijsz.supabase.co/rest/v1/';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM';
-const PIN = '5204';
 /* 반 통계(오답률 집계 등)에서 제외할 계정 — 개별 기록·비교는 그대로 표시됨 */
 const EXCLUDE_NAMES = ['실험용','실험','테스트','test','딘','안성민'];
 const isExcluded = n => EXCLUDE_NAMES.includes(String(n||'').trim());
@@ -86,11 +85,24 @@ const dt = s => s ? new Date(s).toLocaleString('ko-KR',{month:'numeric',day:'num
 const pct = (a,b) => b ? Math.round(a/b*100) : 0;
 let cache = {};
 
-function checkPin(){
-  if($('#pinInput').value === PIN){
-    sessionStorage.setItem('adm','1');
-    $('#pinBox').style.display='none'; $('#app').style.display='block'; boot();
-  } else $('#pinErr').textContent = 'PIN이 올바르지 않습니다.';
+/* PIN은 서버(Supabase RPC)에서만 대조 — 이 파일의 유일한 POST이며 검증 외 어떤 쓰기도 하지 않음 */
+async function verifyPin(pin){
+  const r = await fetch(SB_URL+'rpc/teacher_pin_verify', {
+    method:'POST',
+    headers:{ apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY, 'Content-Type':'application/json' },
+    body: JSON.stringify({ p_pin: String(pin||'').trim() })
+  });
+  if(!r.ok) throw new Error('확인 실패 ('+r.status+')');
+  return (await r.json()) === true;
+}
+async function checkPin(){
+  $('#pinErr').textContent = '';
+  try{
+    if(await verifyPin($('#pinInput').value)){
+      sessionStorage.setItem('adm','1');
+      $('#pinBox').style.display='none'; $('#app').style.display='block'; boot();
+    } else $('#pinErr').textContent = 'PIN이 올바르지 않습니다.';
+  }catch(e){ $('#pinErr').textContent = e.message; }
 }
 $('#pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') checkPin(); });
 if(sessionStorage.getItem('adm')==='1'){ $('#pinBox').style.display='none'; $('#app').style.display='block'; boot(); }
