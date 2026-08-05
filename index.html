@@ -70,7 +70,8 @@ const CONFIG = {
   CATCHUP_BY_ID: { "c763cac7-ccb1-4300-8d5c-928601d78256": { roundOffset: 1, skipUnits: [7] },
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
-                   "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시)
+                   "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7,
+                   "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 1 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
