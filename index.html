@@ -54,6 +54,7 @@
 const CONFIG = {
   SUPABASE_URL: "https://xtxuozcbeqruuigeijsz.supabase.co",
   SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM",
+  TEACHER_PIN: "5204",              // 선생님 대시보드 비밀번호
   NEW_UNITS: { "화": 2, "목": 1 },
   SUPPLEMENTS: { "신예지": { round: 4, units: [5,6] } },  // 결시 보충: 빠진 신규 단원만 추가 응시→기존 attempt에 병합   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
   MAX_UNIT: 60,
@@ -242,6 +243,7 @@ async function buildTest(student, hist){
     if(student.name === "서승원") nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 상시 체제(2026-07-27~, Dean): 월 2단원·금 1단원 — 회차 parity(짝=2/홀=1)로 구현해 보강 요일 무관. r4(월)=[5,6], r5(금)=1단원, r6(월)=2단원 …
   } else {                                    // 화/목 통합반: 시험 당일이 화요일이면 신규 2단원, 그 외 1단원
     nCount = (round % 2 === 0) ? 2 : 1;  // 통합반: 반 진도(회차) 기준 — 짝수회차=화=2단원, 홀수회차=목=1단원 (결시로 다른 요일에 봐도 반과 동일 범위)
+    if(student.class_day === "화목") nCount = (round % 2 === 0) ? 3 : 2;  // 화목반(신지환, 2026-08-05~, Dean): 목=신규 2단원·화=3단원 — 회차 parity(홀=목=2/짝=화=3)로 구현해 보강 요일 무관. r1(목)=[1,2], r2(화)=[3,4,5], r3(목)=[6,7] …
   }
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
@@ -632,10 +634,7 @@ function askPin(label){
 window.teacherLogin = async function(){
   const pin = await askPin("선생님 비밀번호");
   if(pin === null) return;
-  /* 비밀번호는 서버(Supabase RPC)에서만 대조 — 화면/코드에 노출 안 됨 */
-  const { data: ok, error } = await sb.rpc("teacher_pin_verify", { p_pin: pin });
-  if(error){ return alert("비밀번호 확인 실패: " + error.message); }
-  if(!ok){ return alert("비밀번호가 달라요"); }
+  if(pin !== CONFIG.TEACHER_PIN){ return alert("비밀번호가 달라요"); }
   T = { tab: "live", pin };
   sb.channel("rt")
     .on("postgres_changes",{event:"*",schema:"public",table:"attempts"}, ()=>{ if(T.tab==="live") dashLive(); })
