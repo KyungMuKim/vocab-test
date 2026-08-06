@@ -71,7 +71,8 @@ const CONFIG = {
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
                    "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7,
-                   "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 1 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입)
+                   "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 2 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입. 2026-08-06 R=1→2: 1차 [1,2] 23/49 후 Dean 지시로 2차=[1,2,3] 재시험 + 복습풀 재초기화 — RETEST_BY_ID 참조)
+  RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
 };
@@ -225,6 +226,15 @@ async function buildTest(student, hist){
         return { round: _supp.round, newUnits: _missing, items: _items, review: [], supplement: true, mergeId: _tgt.id };
       }
     }
+  }
+
+  /* ===== 재시험(RETEST_BY_ID): 특정 회차를 지정 단원 신규 재시험으로 대체 — 복습 0. 응시하면 round가 넘어가 자동 소거 ===== */
+  const _rt = (CONFIG.RETEST_BY_ID||{})[student.id];
+  if(_rt && round === _rt.round){
+    const { data: _rw, error: _re } = await sb.from("words").select("id,en,ko,unit").in("unit", _rt.units);
+    if(_re) err(_re);
+    const _ri = shuffle(_rw).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
+    return { round, newUnits: _rt.units, items: _ri, review: [], retest: true };
   }
 
   /* ===== round 0 = 진단고사: 능률보카 전범위에서 랜덤 DIAG_COUNT문항 ===== */
@@ -433,7 +443,7 @@ window.proceedStudent = async function(student, resume){
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
-      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
+      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}${test.retest?" · 재시험":""}</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
            + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
