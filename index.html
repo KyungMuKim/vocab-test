@@ -74,7 +74,7 @@ const CONFIG = {
                    "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 2 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입. 2026-08-06 R=1→2: 1차 [1,2] 23/49 후 Dean 지시로 2차=[1,2,3] 재시험 + 복습풀 재초기화 — RETEST_BY_ID 참조)
   RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
-  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원"]  // 반 통계에서 제외할 계정
+  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
 };
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 const app = document.getElementById("app");
@@ -132,7 +132,7 @@ function autoGrade(ko, ans){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="개인" ? "개인" : d==="화목" ? "화목반" : d==="월금" ? "월금반" : (d||"");
+const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
