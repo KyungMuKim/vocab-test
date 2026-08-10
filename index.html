@@ -132,7 +132,7 @@ function autoGrade(ko, ans){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="개인" ? "개인" : (d||"");
+const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="개인" ? "개인" : d==="화목" ? "화목반" : d==="월금" ? "월금반" : (d||"");
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
@@ -256,6 +256,7 @@ async function buildTest(student, hist){
     nCount = (round % 2 === 0) ? 2 : 1;  // 통합반: 반 진도(회차) 기준 — 짝수회차=화=2단원, 홀수회차=목=1단원 (결시로 다른 요일에 봐도 반과 동일 범위)
     if(student.class_day === "화" && round >= 8) nCount = (round % 2 === 0) ? 1 : 2;  // 통합반 parity 반전(2026-08-06~, Dean): 7/30(목) 방학 결강으로 반 달력이 한 칸 밀림 → 8차부터 짝수회차=목=1단원·홀수회차=화=2단원. 8차(8/6 목)=[11], 9차(화)=[12,13], 10차(목)=[14] … (round<8 결시 보강은 기존 parity 그대로)
     if(student.class_day === "화목") nCount = (round % 2 === 0) ? 3 : 2;  // 화목반(신지환, 2026-08-05~, Dean): 목=신규 2단원·화=3단원 — 회차 parity(홀=목=2/짝=화=3)로 구현해 보강 요일 무관. r1(목)=[1,2], r2(화)=[3,4,5], r3(목)=[6,7] …
+    if(student.class_day === "월금") nCount = 3;  // 월금반(김준엽, 2026-08-10~, Dean): 매 회차 신규 3단원 고정(요일·parity 무관). r1(금)=[1,2,3], r2(월)=[4,5,6], r3(금)=[7,8,9] …
   }
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
