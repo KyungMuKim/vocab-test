@@ -71,7 +71,9 @@ const CONFIG = {
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
                    "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7,
-                   "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 2 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입. 2026-08-06 R=1→2: 1차 [1,2] 23/49 후 Dean 지시로 2차=[1,2,3] 재시험 + 복습풀 재초기화 — RETEST_BY_ID 참조)
+                   "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 2,
+                   "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": 8 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입. 2026-08-06 R=1→2: 1차 [1,2] 23/49 후 Dean 지시로 2차=[1,2,3] 재시험 + 복습풀 재초기화 — RETEST_BY_ID 참조)
+  WORD_AMNESTY_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": [17,113,160,200,201,216,220,257,323,478,555,586,639,701,716,733,768,826,842,843,1046,1390,1429,1437] },  // 단어 단위 사면: {student_id:[word_id,..]} — 지정 단어의 모든 기록을 SR 계산에서 무시(회차 무관). 무효 회차의 오답이 이후 회차 복습에 재출제돼 다시 기록된 경우 회차 단위 사면(AMNESTY)으로는 못 걷어내므로 신설. DB기록·결과지·통계 불변. 2026-08-12 황서율: 8/4은 결석일이라 그날 진단 기록 무효(AMNESTY R=8) — 그날 오답 24개가 9차(8/11) 복습에 재출제돼 17개가 다시 오답으로 남은 것까지 함께 제거 (Dean 지시). 사면 단어는 seenIds에서도 빠져 전범위 probe 후보로 자연 복귀
   RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
@@ -167,6 +169,12 @@ async function loadHistory(studentId){
   const _amR = (CONFIG.AMNESTY_BY_ID||{})[studentId];
   if(_amR !== undefined){
     items = items.filter(it => roundOf[it.attempt_id] > _amR || (roundOf[it.attempt_id] === _amR && it.item_type === "new"));
+  }
+  /* 단어 단위 사면: WORD_AMNESTY_BY_ID[student_id]=[word_id..] → 해당 단어의 모든 기록을 SR 계산에서만 무시(회차 무관). 기록/결과지/통계는 그대로 (2026-08-12) */
+  const _wam = (CONFIG.WORD_AMNESTY_BY_ID||{})[studentId];
+  if(_wam && _wam.length){
+    const _wamSet = new Set(_wam);
+    items = items.filter(it => !_wamSet.has(it.word_id));
   }
   items.sort((x,y)=> (roundOf[x.attempt_id]-roundOf[y.attempt_id]) || (x.seq-y.seq));
   /* 단어별 SR 상태: 연속 정답 횟수(streak), 마지막 출제 회차(lastRound), 누적 오답(miss) */
