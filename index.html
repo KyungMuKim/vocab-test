@@ -897,7 +897,9 @@ window.dashStudents = async function(){
   if(!pinErr) (pinRows||[]).forEach(r=>{ pins[r.student_id]=r.pin; });
   const rows = data.map(s=>`
     <tr>
-      <td><b>${esc(s.name)}</b></td><td>${classLabel(s.class_day)}</td>
+      <td><b>${esc(s.name)}</b></td>
+      <td>${classLabel(s.class_day)} <button class="btn-ghost btn-sm" onclick="setStudentDay('${s.id}','${esc(s.name)}','${esc(s.class_day||"")}')">변경</button></td>
+      <td>고${Number(s.grade)||1} <button class="btn-ghost btn-sm" onclick="setStudentGrade('${s.id}','${esc(s.name)}',${Number(s.grade)||1})">변경</button></td>
       <td><b>${pins[s.id]||"—"}</b> <button class="btn-ghost btn-sm" onclick="changePin('${s.id}','${esc(s.name)}')">변경</button></td>
       <td>${s.active?"활동":"<span class='small'>숨김</span>"}</td>
       <td><button class="btn-ghost btn-sm" onclick="toggleStudent('${s.id}',${!s.active})">${s.active?"숨기기":"복구"}</button></td>
@@ -906,17 +908,46 @@ window.dashStudents = async function(){
     ${pinErr?`<div class="flag amber">PIN 불러오기 실패: ${esc(pinErr.message)} — supabase_4_학생PIN_공용.sql 을 실행했는지 확인하세요.</div>`:""}
     <div class="row">
       <input type="text" id="newName" placeholder="이름" style="flex:2; margin:0">
-      <select id="newDay"><option value="화">씨앤씨 중1 Stan반</option><option value="면접">면접반</option><option value="개인">개인</option></select>
+      <select id="newDay">
+        <option value="화">씨앤씨 중1 Stan반</option>
+        <option value="면접">면접반</option>
+        <option value="개인">개인</option>
+        <option value="월금">개인 · 월금</option>
+        <option value="화목">개인 · 화목</option>
+      </select>
+      <select id="newGrade"><option value="1">고1</option><option value="3">고3</option></select>
       <button class="btn-ghost" onclick="addStudent()">추가</button>
     </div>
-    <table><tr><th>이름</th><th>반</th><th>비밀번호</th><th>상태</th><th></th></tr>${rows}</table>`);
+    <div class="small" style="margin:6px 2px">※ 반 코드(월금·화목)는 단어시험 신규 단원 수 분기에 쓰이고, 학년은 미니모의고사에서 볼 수 있는 회차를 정합니다.</div>
+    <table><tr><th>이름</th><th>반</th><th>학년</th><th>비밀번호</th><th>상태</th><th></th></tr>${rows}</table>`);
 };
 window.addStudent = async function(){
   const name = document.getElementById("newName").value.trim();
   const day = document.getElementById("newDay").value;
+  const grade = Number(document.getElementById("newGrade").value) || 1;
   if(!name) return alert("이름을 입력하세요");
-  const { error } = await sb.from("students").insert({ name, class_day: day });
+  const { error } = await sb.from("students").insert({ name, class_day: day, grade });
   if(error) return alert(error.code==="23505" ? "이미 있는 이름이에요" : "오류: "+error.message);
+  dashStudents();
+};
+/* 미니모의고사 앱이 students.grade로 학년을 고정하므로 여기서 바꿀 수 있게 둔다 */
+window.setStudentGrade = async function(id, name, cur){
+  const v = prompt(`${name} 학생의 학년 (1 또는 3)`, String(cur||1));
+  if(v===null) return;
+  const g = Number(String(v).trim());
+  if(![1,3].includes(g)) return alert("1 또는 3으로 입력하세요");
+  const { error } = await sb.from("students").update({ grade: g }).eq("id", id);
+  if(error) return alert("오류: "+error.message);
+  dashStudents();
+};
+/* ⚠ class_day 원문 값은 buildTest 신규단원 수 분기에 쓰임 — 아래 5개 외 값은 넣지 말 것 */
+window.setStudentDay = async function(id, name, cur){
+  const v = prompt(`${name} 학생의 반 코드 (화 / 면접 / 개인 / 월금 / 화목)`, cur||"");
+  if(v===null) return;
+  const d = String(v).trim();
+  if(!["화","면접","개인","월금","화목"].includes(d)) return alert("화 / 면접 / 개인 / 월금 / 화목 중 하나로 입력하세요");
+  const { error } = await sb.from("students").update({ class_day: d }).eq("id", id);
+  if(error) return alert("오류: "+error.message);
   dashStudents();
 };
 window.changePin = async function(id, name){
