@@ -74,7 +74,8 @@ const CONFIG = {
                    "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": 2,
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": 8 },  // 복습풀 리셋(사면): {student_id: R회차} — R회차 이전 기록을 SR 계산에서만 무시(R회차 신규 파트는 유지). DB기록·결과지·통계 불변. 2026-07-27 서승원(풀83 clean slate, Dean 지시). 2026-08-05 신지환 R=1(진단 오답 32개를 1차 복습에서 제외 — 첫 정규시험은 신규 [1,2]만 49문항, Dean 지시. 진단 단어는 2차부터 probe로 자연 유입. 2026-08-06 R=1→2: 1차 [1,2] 23/49 후 Dean 지시로 2차=[1,2,3] 재시험 + 복습풀 재초기화 — RETEST_BY_ID 참조)
   WORD_AMNESTY_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": [17,113,160,200,201,216,220,257,323,478,555,586,639,701,716,733,768,826,842,843,1046,1390,1429,1437] },  // 단어 단위 사면: {student_id:[word_id,..]} — 지정 단어의 모든 기록을 SR 계산에서 무시(회차 무관). 무효 회차의 오답이 이후 회차 복습에 재출제돼 다시 기록된 경우 회차 단위 사면(AMNESTY)으로는 못 걷어내므로 신설. DB기록·결과지·통계 불변. 2026-08-12 황서율: 8/4은 결석일이라 그날 진단 기록 무효(AMNESTY R=8) — 그날 오답 24개가 9차(8/11) 복습에 재출제돼 17개가 다시 오답으로 남은 것까지 함께 제거 (Dean 지시). 사면 단어는 seenIds에서도 빠져 전범위 probe 후보로 자연 복귀
-  RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
+  RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },
+  FORCE_UNITS_BY_ID: { "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { units: [16,17] } },  // 다음 시험 신규 단원 강제 지정: {student_id:{units:[..]}} — 복습은 정상 출제, 지정 단원 중 하나라도 covered에 들어가면(=응시 완료) 자동 소거. 2026-08-28 안성민 다음 시험 = 신규 [16,17] (Dean 지시)  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
 };
@@ -270,7 +271,8 @@ async function buildTest(student, hist){
   }
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
-  const newUnits = remaining.slice(0, nCount);
+  const _fu = (CONFIG.FORCE_UNITS_BY_ID||{})[student.id];
+  const newUnits = (_fu && !_fu.units.some(u=>hist.covered.includes(u))) ? _fu.units.slice() : remaining.slice(0, nCount);  // FORCE_UNITS_BY_ID: 지정 단원이 아직 미응시면 그대로 출제(요일·parity 무시)
 
   let items = [];
   if(newUnits.length){
