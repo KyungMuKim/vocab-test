@@ -68,6 +68,7 @@ const CONFIG = {
   REVIEW_MAX_BY_NAME: { "서승원": 40, "김규현": 40 },  // 학생별 복습 상한 오버라이드 (2026-07-27 Dean: 승원 복습 60문항 전멸 방지 / 2026-08-03 Dean: 규현도 동일 — 리셋 후 풀 재팽창 시 전멸 방지)
   DIAG_PLUS_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { units: [11], diagCount: 50, atAttempts: 1 } },  // "진단고사 + 신규 단원" 동시 응시 {student_id:{units:[신규단원], diagCount:진단문항수, atAttempts:n}} — attempts가 n건(기본 0)일 때만 적용, 그 회차가 지나면 자동 소거. atAttempts>0이면 정규 회차 번호로 저장. 2026-08-04 황서율 첫 시험(10단원+진단 50) → 2026-08-06 Dean 지시: 두 번째 시험(8차)도 신규 11단원 + 진단 50 재응시(복습 대체)
   CATCHUP_BY_ID: { "c763cac7-ccb1-4300-8d5c-928601d78256": { roundOffset: 1, skipUnits: [7] },
+                   "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { skipUnits: [13,14,15] },  // 안성민(2026-08-28, Dean): [16,17] 다음은 18단원부터 이어감 — 13~15단원 영구 건너뜀(회차 오프셋 없음)
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
                    "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7,
