@@ -261,7 +261,7 @@
                correct: !!g.correct, corrected: false, needs_review: !!g.review, seq: i+1 };
     });
     var score = items.filter(function(x){ return x.correct; }).length;
-    POST("attempts", { student_id: S.student.id, round: 0, new_units: 0, new_score: score, new_total: N, rev_score: 0, rev_total: 0 }, true)
+    POST("attempts", { student_id: S.student.id, round: 0, new_units: [], new_score: score, new_total: N, rev_score: 0, rev_total: 0 }, true)
       .then(function(rows){
         var aid = rows[0].id;
         items.forEach(function(x){ x.attempt_id = aid; });
