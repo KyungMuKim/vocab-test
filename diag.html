@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>진단평가 30 · 나는 몇 개 맞힐까</title>
+<style>
+  :root { --charcoal:#0F1B33; --red:#B03029; --cream:#FAF7EC; --orange:#FABA28; --ink:#1C263B; --gray:#5A6377; --lgray:#F2F2F2; --green:#2B7A3B; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Georgia, "Malgun Gothic", "맑은 고딕", sans-serif; background:var(--cream); color:var(--ink); min-height:100vh; }
+  .wrap { max-width:480px; margin:0 auto; padding:20px 16px 40px; }
+  .strap { color:var(--red); font-weight:bold; font-size:12px; letter-spacing:1px; }
+  h1 { color:var(--charcoal); font-size:24px; margin:6px 0 2px; }
+  .sub { color:var(--gray); font-size:13px; line-height:1.5; margin-bottom:18px; }
+  .card { background:#fff; border-left:5px solid var(--red); border-radius:8px; padding:18px 16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(15,27,51,.08); }
+  .btn { display:block; width:100%; border:none; border-radius:8px; padding:14px; font-size:16px; font-weight:bold; cursor:pointer; font-family:inherit; }
+  .btn-red { background:var(--red); color:#fff; }
+  .btn-dark { background:var(--charcoal); color:#fff; }
+  .btn-line { background:#fff; color:var(--charcoal); border:2px solid var(--charcoal); }
+  .btn:disabled { opacity:.45; }
+  .hide { display:none !important; }
+  .names { display:flex; flex-wrap:wrap; gap:8px; }
+  .names button { flex:0 0 calc(33.3% - 6px); background:var(--lgray); border:none; border-radius:8px; padding:12px 4px; font-size:14px; font-weight:bold; color:var(--charcoal); cursor:pointer; font-family:inherit; }
+  .word { font-size:32px; font-weight:bold; color:var(--charcoal); text-align:center; padding:20px 0 4px; word-break:break-all; }
+  .unitline { text-align:center; color:var(--gray); font-size:12px; margin-bottom:12px; }
+  .ansinput { width:100%; font-size:17px; padding:12px; border:2px solid var(--charcoal); border-radius:8px; font-family:inherit; margin-bottom:10px; }
+  .progressbar { height:6px; background:var(--lgray); border-radius:3px; overflow:hidden; margin-bottom:12px; }
+  .progressbar > div { height:100%; background:var(--orange); width:0%; }
+  .counter { font-size:12px; color:var(--gray); text-align:right; margin-bottom:6px; }
+  .bignum { font-size:48px; font-weight:bold; text-align:center; color:var(--charcoal); }
+  .predict-input { width:100%; font-size:28px; text-align:center; padding:10px; border:2px solid var(--charcoal); border-radius:8px; font-family:inherit; }
+  label { font-size:13px; color:var(--gray); display:block; margin-bottom:8px; }
+  .resrow { display:flex; justify-content:space-between; padding:12px 4px; border-bottom:1px solid var(--lgray); font-size:15px; }
+  .resrow b { color:var(--charcoal); }
+  .band { background:var(--cream); border-left:4px solid var(--red); padding:12px; font-size:13px; line-height:1.6; color:var(--red); font-weight:bold; margin-top:14px; border-radius:0 6px 6px 0; }
+  .err { color:var(--red); font-size:13px; line-height:1.5; }
+  .note { color:var(--gray); font-size:12px; line-height:1.5; margin-top:8px; }
+  .footer { text-align:center; color:var(--gray); font-size:11px; margin-top:26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="strap">INTERVIEW MAIN · WEEK 6 · EXPERIMENT</div>
+  <h1>진단평가 30</h1>
+  <div class="sub">능률보카 어원편 전범위에서 무작위로 뽑은 30단어입니다. 사람마다 문제가 다릅니다. 제출한 답안은 선생님이 감수한 뒤 최종 점수가 확정됩니다.</div>
+
+  <div id="step-name" class="card">
+    <label><b>이름을 선택하세요</b></label>
+    <div id="name-list" class="names">불러오는 중…</div>
+    <div id="name-msg" class="err" style="margin-top:10px"></div>
+  </div>
+
+  <div id="step-confirm" class="card hide">
+    <label>아래 이름이 본인이 맞나요?</label>
+    <div class="bignum" id="confirm-name" style="font-size:30px; padding:8px 0 16px"></div>
+    <button id="btn-confirm" class="btn btn-red">네, 맞습니다</button>
+    <div style="height:8px"></div>
+    <button id="btn-back" class="btn btn-line">이름 다시 선택</button>
+    <div id="dup-msg" class="note"></div>
+  </div>
+
+  <div id="step-predict" class="card hide">
+    <label>시험을 치기 전에 먼저 답할 것이 있습니다.<br><b>30개 중 몇 개를 맞힐 것 같나요?</b></label>
+    <input id="predict" class="predict-input" type="number" min="0" max="30" inputmode="numeric" placeholder="0 ~ 30">
+    <div style="height:12px"></div>
+    <button id="btn-start" class="btn btn-red">예측 완료, 시험 시작</button>
+    <div id="load-msg" class="err" style="margin-top:10px"></div>
+  </div>
+
+  <div id="step-quiz" class="hide">
+    <div class="counter"><span id="qnum">1</span> / 30</div>
+    <div class="progressbar"><div id="pbar"></div></div>
+    <div class="card">
+      <div class="word" id="q-word"></div>
+      <div class="unitline" id="q-unit"></div>
+      <input id="ans" class="ansinput" type="text" autocomplete="off" placeholder="뜻을 입력하세요 (모르면 비워 두세요)">
+      <button id="btn-next" class="btn btn-dark">다음</button>
+    </div>
+  </div>
+
+  <div id="step-save" class="card hide">
+    <label>답안을 제출합니다.</label>
+    <button id="btn-save" class="btn btn-red">제출하기</button>
+    <div id="save-msg" class="err" style="margin-top:10px"></div>
+  </div>
+
+  <div id="step-result" class="hide">
+    <div class="card">
+      <div class="bignum"><span id="r-score"></span><span style="font-size:20px;color:var(--gray)"> / 30 (잠정)</span></div>
+      <div class="resrow"><span>내 예측</span><b id="r-predict"></b></div>
+      <div class="resrow"><span>자동채점 점수</span><b id="r-actual"></b></div>
+      <div class="resrow"><span>차이</span><b id="r-gap"></b></div>
+      <div class="band" id="r-msg"></div>
+      <div class="note">자동채점이 확신하지 못한 답은 선생님이 직접 검수합니다. 최종 점수는 수업에서 안내합니다.</div>
+    </div>
+  </div>
+
+  <div class="footer">씨앤씨 학원 · 강사 김경무 · 0.1% for 0.1%</div>
+</div>
+
+<script>
+(function(){
+  var SUPABASE_URL = "https://xtxuozcbeqruuigeijsz.supabase.co";
+  var N = 30;
+  var TESTER = /(?:\?|&)test=1/.test(location.search);
+  var S = { key:null, grade:null, student:null, predict:0, words:null, quiz:[], idx:0, answers:[] };
+
+  function $(id){ return document.getElementById(id); }
+  function show(id){ ["step-name","step-confirm","step-predict","step-quiz","step-save","step-result"].forEach(function(x){ $(x).classList.add("hide"); }); $(id).classList.remove("hide"); }
+  function H(){ return { apikey:S.key, Authorization:"Bearer "+S.key, "Content-Type":"application/json" }; }
+  function GET(p){ return fetch(SUPABASE_URL+"/rest/v1/"+p, {headers:H()}).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }); }
+  function POST(p, body, rep){
+    var h = H(); if (rep) h.Prefer = "return=representation";
+    return fetch(SUPABASE_URL+"/rest/v1/"+p, {method:"POST", headers:h, body:JSON.stringify(body)})
+      .then(function(r){
+        if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP "+r.status+" "+t.slice(0,120)); });
+        return rep ? r.json() : null;
+      });
+  }
+
+  // 부트스트랩: 본체 index.html에서 접속 키와 자동채점 함수(stem, expandBrackets, meaningTokens, matchToken, autoGrade)를 추출.
+  // 본체와 같은 로직으로 채점되므로 관리자 페이지의 감수 흐름과 그대로 호환됩니다.
+  function bootstrap(){
+    return fetch("index.html", {cache:"no-store"}).then(function(r){ return r.text(); }).then(function(src){
+      var m = src.match(/eyJ[A-Za-z0-9_\-\.]{50,}/);
+      if (!m) throw new Error("KEY_NOT_FOUND");
+      S.key = m[0];
+      try {
+        var names = ["stem","expandBrackets","meaningTokens","matchToken","autoGrade"];
+        var code = names.map(function(n){
+          var i = src.indexOf("function "+n);
+          if (i < 0) throw new Error("FN_"+n);
+          var rest = src.slice(i);
+          var e = rest.slice(9).search(/\n\s*(function |\/\* =|const [A-Z]|window\.)/);
+          return rest.slice(0, e > 0 ? e+9 : 2000);
+        }).join("\n\n");
+        S.grade = new Function(code + "\nreturn autoGrade;")();
+      } catch(e){
+        S.grade = null; // 채점 모듈 추출 실패: 답안은 전부 감수 대상으로 저장 (아래 참고)
+      }
+    });
+  }
+
+  function loadNames(){
+    var listPath = TESTER
+      ? "students?select=id,name&name=eq." + encodeURIComponent("실험용")
+      : "students?select=id,name&class_day=eq." + encodeURIComponent("면접") + "&active=is.true&order=name";
+    GET(listPath).then(function(rows){
+      var box = $("name-list"); box.innerHTML = "";
+      rows.forEach(function(st){
+        var b = document.createElement("button"); b.textContent = st.name;
+        b.addEventListener("click", function(){
+          S.student = st; $("confirm-name").textContent = st.name; $("dup-msg").textContent = ""; show("step-confirm");
+          GET("attempts?student_id=eq."+st.id+"&round=eq.0&select=id").then(function(a){
+            if(a.length) $("dup-msg").textContent = "이미 제출한 기록이 있습니다. 다시 응시하면 기록이 하나 더 추가됩니다.";
+          }).catch(function(){});
+        });
+        box.appendChild(b);
+      });
+      if(!rows.length) box.textContent = "명단이 비어 있습니다.";
+    }).catch(function(e){ $("name-msg").textContent = "명단을 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침해 주세요. ("+e.message+")"; });
+  }
+
+  bootstrap().then(loadNames).catch(function(e){
+    $("name-msg").textContent = "준비에 실패했습니다. 새로고침해 주세요. ("+e.message+")";
+    $("name-list").textContent = "";
+  });
+
+  $("btn-back").addEventListener("click", function(){ show("step-name"); });
+  $("btn-confirm").addEventListener("click", function(){ show("step-predict"); });
+
+  function fetchWords(){
+    var all = [];
+    function page(off){
+      return GET("words?select=id,en,ko,unit&order=id&limit=1000&offset="+off).then(function(rows){
+        all = all.concat(rows);
+        if (rows.length === 1000) return page(off+1000);
+        return all;
+      });
+    }
+    return page(0);
+  }
+  function sample(ws){
+    var byUnit = {};
+    ws.forEach(function(w){ (byUnit[w.unit] = byUnit[w.unit] || []).push(w); });
+    var units = Object.keys(byUnit);
+    for (var i = units.length-1; i>0; i--){ var j = Math.floor(Math.random()*(i+1)); var t = units[i]; units[i]=units[j]; units[j]=t; }
+    var picked = [], u = 0;
+    while (picked.length < N && u < 5000){
+      var pool = byUnit[units[u % units.length]];
+      if (pool.length) picked.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+      u++;
+    }
+    for (var a = picked.length-1; a>0; a--){ var b2 = Math.floor(Math.random()*(a+1)); var t2 = picked[a]; picked[a]=picked[b2]; picked[b2]=t2; }
+    return picked.slice(0, N);
+  }
+
+  $("btn-start").addEventListener("click", function(){
+    var p = parseInt($("predict").value, 10);
+    if (isNaN(p) || p < 0 || p > 30){ $("load-msg").textContent = "0에서 30 사이의 숫자를 먼저 적어 주세요."; return; }
+    S.predict = p;
+    $("btn-start").disabled = true;
+    $("load-msg").textContent = "문제를 불러오는 중입니다…";
+    var ready = S.words ? Promise.resolve(S.words) : fetchWords().then(function(ws){ S.words = ws; return ws; });
+    ready.then(function(ws){
+      S.quiz = sample(ws); S.idx = 0; S.answers = [];
+      show("step-quiz"); showQ();
+    }).catch(function(e){
+      $("btn-start").disabled = false;
+      $("load-msg").textContent = "단어를 불러오지 못했습니다. 다시 눌러 주세요. ("+e.message+")";
+    });
+  });
+
+  function showQ(){
+    var w = S.quiz[S.idx];
+    $("qnum").textContent = S.idx+1;
+    $("pbar").style.width = (S.idx/N*100)+"%";
+    $("q-word").textContent = w.en;
+    $("q-unit").textContent = "UNIT " + w.unit;
+    $("ans").value = "";
+    $("ans").focus();
+    $("btn-next").textContent = (S.idx === N-1) ? "마지막 문항, 답 저장" : "다음";
+  }
+  function next(){
+    S.answers.push($("ans").value.trim());
+    S.idx++;
+    if (S.idx >= N){ show("step-save"); return; }
+    showQ();
+  }
+  $("btn-next").addEventListener("click", next);
+  $("ans").addEventListener("keydown", function(e){ if(e.key === "Enter") next(); });
+
+  $("btn-save").addEventListener("click", function(){
+    $("btn-save").disabled = true;
+    $("save-msg").textContent = "저장 중입니다…";
+    var items = S.quiz.map(function(w, i){
+      var ans = S.answers[i] || "";
+      var g;
+      if (S.grade) g = S.grade(w.ko, ans);
+      else g = { correct:false, review: ans.length > 0 }; // 채점 모듈이 없으면 답한 문항 전부 감수 대상
+      return { word_id: w.id, en: w.en, unit: w.unit, item_type: "new", answer: ans || null,
+               correct: !!g.correct, corrected: false, needs_review: !!g.review, seq: i+1 };
+    });
+    var score = items.filter(function(x){ return x.correct; }).length;
+    POST("attempts", { student_id: S.student.id, round: 0, new_units: 0, new_score: score, new_total: N, rev_score: 0, rev_total: 0 }, true)
+      .then(function(rows){
+        var aid = rows[0].id;
+        items.forEach(function(x){ x.attempt_id = aid; });
+        return POST("attempt_items", items, false);
+      })
+      .then(function(){
+        $("r-score").textContent = score;
+        $("r-predict").textContent = S.predict + "개";
+        $("r-actual").textContent = score + "개";
+        var gap = score - S.predict;
+        $("r-gap").textContent = (gap>0?"+":"") + gap + "개";
+        var msg;
+        if (Math.abs(gap) <= 2) msg = "예측이 실제와 거의 같습니다. 자기 어휘 상태를 정확히 보고 있다는 뜻입니다.";
+        else if (gap < 0) msg = "예측보다 " + (-gap) + "개 적게 맞혔습니다. 안다는 느낌과 실제로 아는 것의 차이, 오늘 수업이 이 이야기입니다.";
+        else msg = "예측보다 " + gap + "개 더 맞혔습니다. 자신을 낮춰 본 쪽입니다. 이것도 오늘 수업의 이야기입니다.";
+        $("r-msg").textContent = msg;
+        show("step-result");
+      })
+      .catch(function(e){
+        $("btn-save").disabled = false;
+        $("save-msg").textContent = "저장에 실패했습니다. 답안은 그대로 남아 있으니 다시 눌러 주세요. ("+e.message+")";
+      });
+  });
+})();
+</script>
+</body>
+</html>
