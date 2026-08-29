@@ -126,17 +126,36 @@
       if (!m) throw new Error("KEY_NOT_FOUND");
       S.key = m[0];
       try {
-        var names = ["stem","expandBrackets","meaningTokens","matchToken","autoGrade"];
-        var code = names.map(function(n){
+        var names = ["norm","stem","expandBrackets","meaningTokens","matchToken","autoGrade"];
+        function grabFn(n){
           var i = src.indexOf("function "+n);
+          if (i < 0){
+            var mm = src.match(new RegExp("(?:const|var|let)\\s+"+n+"\\s*="));
+            if (mm) i = src.indexOf(mm[0]);
+          }
           if (i < 0) throw new Error("FN_"+n);
           var rest = src.slice(i);
           var e = rest.slice(9).search(/\n\s*(function |\/\* =|const [A-Z]|window\.)/);
           return rest.slice(0, e > 0 ? e+9 : 2000);
-        }).join("\n\n");
-        S.grade = new Function(code + "\nreturn autoGrade;")();
+        }
+        // 누락 헬퍼 자가 복구: 시험 채점을 실제로 한 번 돌려 보고, 정의 안 된 함수가 나오면 추가로 가져온다
+        for (var attempt = 0; attempt < 6; attempt++){
+          var code = names.map(grabFn).join("\n\n");
+          var fn = new Function(code + "\nreturn autoGrade;")();
+          try {
+            fn(["진보, 발전"], "진보");
+            fn(["제안하다"], "");
+            fn(["구매하다, 구입하다"], "전혀다른뜻");
+            S.grade = fn;
+            break;
+          } catch(err){
+            var miss = /([A-Za-z_$][A-Za-z0-9_$]*) is not defined/.exec(err.message);
+            if (miss && names.indexOf(miss[1]) < 0) names.unshift(miss[1]);
+            else throw err;
+          }
+        }
       } catch(e){
-        S.grade = null; // 채점 모듈 추출 실패: 답안은 전부 감수 대상으로 저장 (아래 참고)
+        S.grade = null; // 채점 모듈 추출 실패: 답한 문항은 전부 감수 대상으로 저장
       }
     });
   }
@@ -235,9 +254,9 @@
     $("save-msg").textContent = "저장 중입니다…";
     var items = S.quiz.map(function(w, i){
       var ans = S.answers[i] || "";
-      var g;
-      if (S.grade) g = S.grade(w.ko, ans);
-      else g = { correct:false, review: ans.length > 0 }; // 채점 모듈이 없으면 답한 문항 전부 감수 대상
+      var g = null;
+      if (S.grade) { try { g = S.grade(w.ko, ans); } catch(err){ g = null; } }
+      if (!g) g = { correct:false, review: ans.length > 0 }; // 채점 불가 문항은 감수 대상으로
       return { word_id: w.id, en: w.en, unit: w.unit, item_type: "new", answer: ans || null,
                correct: !!g.correct, corrected: false, needs_review: !!g.review, seq: i+1 };
     });
