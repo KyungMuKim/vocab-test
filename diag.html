@@ -261,7 +261,14 @@
                correct: !!g.correct, corrected: false, needs_review: !!g.review, seq: i+1 };
     });
     var score = items.filter(function(x){ return x.correct; }).length;
-    POST("attempts", { student_id: S.student.id, round: 0, new_units: [], new_score: score, new_total: N, rev_score: 0, rev_total: 0 }, true)
+    // predicted = 시험 전 예측 개수. attempts에 predicted 컬럼이 없으면(스키마 미적용) 그 필드만 빼고 재시도.
+    var att = { student_id: S.student.id, round: 0, new_units: [], new_score: score, new_total: N, rev_score: 0, rev_total: 0, predicted: S.predict };
+    POST("attempts", att, true)
+      .catch(function(e){
+        if (att.predicted === undefined) throw e;
+        delete att.predicted;
+        return POST("attempts", att, true);
+      })
       .then(function(rows){
         var aid = rows[0].id;
         items.forEach(function(x){ x.attempt_id = aid; });
