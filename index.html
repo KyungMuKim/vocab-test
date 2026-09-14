@@ -77,6 +77,20 @@ const CONFIG = {
   WORD_AMNESTY_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": [17,113,160,200,201,216,220,257,323,478,555,586,639,701,716,733,768,826,842,843,1046,1390,1429,1437] },  // 단어 단위 사면: {student_id:[word_id,..]} — 지정 단어의 모든 기록을 SR 계산에서 무시(회차 무관). 무효 회차의 오답이 이후 회차 복습에 재출제돼 다시 기록된 경우 회차 단위 사면(AMNESTY)으로는 못 걷어내므로 신설. DB기록·결과지·통계 불변. 2026-08-12 황서율: 8/4은 결석일이라 그날 진단 기록 무효(AMNESTY R=8) — 그날 오답 24개가 9차(8/11) 복습에 재출제돼 17개가 다시 오답으로 남은 것까지 함께 제거 (Dean 지시). 사면 단어는 seenIds에서도 빠져 전범위 probe 후보로 자연 복귀
   RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] } },
   FORCE_UNITS_BY_ID: { "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { units: [16,17] } },  // 다음 시험 신규 단원 강제 지정: {student_id:{units:[..]}} — 복습은 정상 출제, 지정 단원 중 하나라도 covered에 들어가면(=응시 완료) 자동 소거. 2026-08-28 안성민 다음 시험 = 신규 [16,17] (Dean 지시)  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
+  /* ===== 시험기간 모드 (2026-09-14, Dean): 신규 = 학교 내신 단어장(THE BLUEPRINT), 복습 = 능률보카 복습풀에서 상한만 =====
+     active를 false로 두거나 untilKST(KST 날짜)를 넘기면 정규 모드로 자동 복귀.
+     신규는 unitsBySchool의 과를 앞에서부터 한 회차에 하나씩(covered 기준) 출제 — 다 돌면 전 과 재출제.
+     crew(문법크루)는 신규 없이 복습풀만. 내신 단어(unit >= EXAM_UNIT_MIN)는 SR/복습풀에 절대 편입되지 않음(아래 loadHistory 필터). */
+  EXAM_MODE: {
+    active: true,
+    untilKST: "2026-10-05",
+    reviewMax: 20,                                                  // 일반 학생 복습 상한
+    crewReviewMax: 40,                                              // 문법크루 복습 상한
+    crew: ["신예지","홍서연","박서진"],                                  // 신규 없음 · 복습풀만
+    schoolByName: { "엄선우":"목일", "황서율":"목일", "강준호":"신남", "김규현":"신서", "이은솔":"신서", "주현우":"신서" },
+    unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] }
+  },
+  EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
 };
@@ -136,6 +150,9 @@ function autoGrade(ko, ans){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+const UNIT_NAME = { 941:"내신 5과", 942:"내신 6과", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과" };  // 시험기간 내신 단어장 표기(학생 화면)
+const unitName = u => UNIT_NAME[u] || (u + "단원");
+const unitNames = arr => ((arr||[]).length ? (arr).map(unitName).join(", ") : "복습만");
 const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
@@ -178,6 +195,9 @@ async function loadHistory(studentId){
     const _wamSet = new Set(_wam);
     items = items.filter(it => !_wamSet.has(it.word_id));
   }
+  /* 시험기간 내신 단어(unit >= EXAM_UNIT_MIN)는 SR 계산·복습풀·seen에서 제외 — 복습풀은 능률보카 전용 (2026-09-14 Dean).
+     DB 기록·결과지·신규 점수는 그대로. 진도(covered)는 attempts.new_units에서 오므로 영향 없음. */
+  items = items.filter(it => !(it.unit >= (CONFIG.EXAM_UNIT_MIN || 940)));
   items.sort((x,y)=> (roundOf[x.attempt_id]-roundOf[y.attempt_id]) || (x.seq-y.seq));
   /* 단어별 SR 상태: 연속 정답 횟수(streak), 마지막 출제 회차(lastRound), 누적 오답(miss) */
   const state = {};
@@ -257,6 +277,14 @@ async function buildTest(student, hist){
   }
 
   /* ===== 이후 회차: 신규 단원 + 복습 ===== */
+  /* ===== 시험기간 모드 판정 ===== */
+  const _em = CONFIG.EXAM_MODE || {};
+  const _todayKST = new Date(Date.now() + 9*3600*1000).toISOString().slice(0,10);
+  const _emLive = !!_em.active && (!_em.untilKST || _todayKST <= _em.untilKST);
+  const _exCrew = _emLive && (_em.crew||[]).includes(student.name);
+  const _exSchool = _emLive ? (_em.schoolByName||{})[student.name] : null;
+  const _exOn = _emLive && (_exCrew || !!_exSchool);
+
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
   let nCount;
   if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
@@ -274,7 +302,18 @@ async function buildTest(student, hist){
   const remaining = [];
   for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
   const _fu = (CONFIG.FORCE_UNITS_BY_ID||{})[student.id];
-  const newUnits = (_fu && !_fu.units.some(u=>hist.covered.includes(u))) ? _fu.units.slice() : remaining.slice(0, nCount);  // FORCE_UNITS_BY_ID: 지정 단원이 아직 미응시면 그대로 출제(요일·parity 무시)
+  let newUnits;
+  if(_exOn){
+    /* 시험기간: 문법크루는 신규 없음. 그 외는 학교 단어장 과를 앞에서부터 한 회차에 하나씩(이미 본 과는 건너뜀) */
+    if(_exCrew){ newUnits = []; }
+    else {
+      const _list = ((_em.unitsBySchool||{})[_exSchool] || []);
+      const _rest = _list.filter(u => !hist.covered.includes(u));
+      newUnits = _rest.length ? [_rest[0]] : _list.slice();
+    }
+  } else {
+    newUnits = (_fu && !_fu.units.some(u=>hist.covered.includes(u))) ? _fu.units.slice() : remaining.slice(0, nCount);  // FORCE_UNITS_BY_ID: 지정 단원이 아직 미응시면 그대로 출제(요일·parity 무시)
+  }
 
   let items = [];
   if(newUnits.length){
@@ -287,7 +326,8 @@ async function buildTest(student, hist){
      1회차(진단 직후): 진단 오답 전부(최대 DIAG_WRONG_CAP) — 랜덤/주기 없음
      2회차 이후: 오답 전부 + SR 도래(상한 SR_CAP, 취약 우선) + REVIEW_MIN까지 전범위 probe (합산 ≤ REVIEW_MAX) */
   let review = [];
-  const revMax = (CONFIG.REVIEW_MAX_BY_NAME||{})[student.name] || CONFIG.REVIEW_MAX;  // 학생별 복습 상한 (2026-07-27)
+  const revMax = _exOn ? (_exCrew ? (_em.crewReviewMax || 40) : (_em.reviewMax || 20))            // 시험기간 상한(2026-09-14 Dean)
+                       : ((CONFIG.REVIEW_MAX_BY_NAME||{})[student.name] || CONFIG.REVIEW_MAX);  // 학생별 복습 상한 (2026-07-27)
   const newIdSet = new Set(items.map(w=>w.word_id));
   const isPostDiag = round === 1;
   const iv = w => w.known ? CONFIG.KNOWN_INTERVAL : CONFIG.SR_INTERVALS[Math.min(w.streak, CONFIG.SR_INTERVALS.length-1)];
@@ -332,7 +372,7 @@ async function buildTest(student, hist){
   }
 
   if(!items.length && !review.length) return null;
-  return { round, newUnits, items, review };
+  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew };
 }
 
 /* ================= 반 통계 (신규/복습 각각) ================= */
@@ -453,14 +493,21 @@ window.proceedStudent = async function(student, resume){
     if(test.diag){
       head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else if(test.diagPlus){
-      head = `📘 <b>진단고사 + 신규</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (<b>${test.items.length}문항</b>)`
+      head = `📘 <b>진단고사 + 신규</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (<b>${test.items.length}문항</b>)`
            + `<br>🧭 진단: 능률보카 전범위 랜덤 <b>${test.review.length}문항</b>`
            + `<br><span class="small">앞부분은 이번에 공부한 단원, 뒷부분은 실력 측정용 진단이에요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else {
       const cnt = t => test.review.filter(r=>r.type===t).length;
       const revParts = [["오답",cnt("wrong")],["주기",cnt("sr")],["랜덤",cnt("random")]].filter(p=>p[1]).map(p=>`${p[0]} ${p[1]}`).join(" + ");
-      head = `📘 <b>${test.round}회차${test.supplement?" · 보충시험":""}${test.retest?" · 재시험":""}</b> (${classLabel(student.class_day)}) — 신규: ${test.newUnits.map(u=>u+"단원").join(", ")} (${test.items.length}문항)`
-           + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요");
+      const tag = `${test.round}회차${test.exam?" · 시험기간":""}${test.supplement?" · 보충시험":""}${test.retest?" · 재시험":""}`;
+      if(test.exam && !test.items.length){
+        head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 이번 회차는 <b>신규 없이 복습만</b> ${test.review.length}문항 (${revParts})`
+             + `<br><span class="small">시험기간이라 문법에 집중하는 기간이에요. 지금까지 틀린 단어에서만 나옵니다.</span>`;
+      } else {
+        head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
+             + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
+             + (test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "");
+      }
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
       <div class="pill">${head}</div>
@@ -558,7 +605,7 @@ async function submitSupplement(){
      <div class="card">
        <h2>보충 저장 완료 ✅</h2>
        <div class="score-big">${add} / ${addTot} <span class="small">보충 신규</span></div>
-       <div class="pill">이번 회차 신규 합산: <b>${nScore} / ${nTotal}</b> (${nUnits.map(u=>u+"단원").join(", ")})<br><span class="small">기존 ${S.test.round}회차 기록에 합쳐졌어요. 복습은 이전 응시로 반영됨.</span></div>
+       <div class="pill">이번 회차 신규 합산: <b>${nScore} / ${nTotal}</b> (${unitNames(nUnits)})<br><span class="small">기존 ${S.test.round}회차 기록에 합쳐졌어요. 복습은 이전 응시로 반영됨.</span></div>
        <button class="btn-ghost" onclick="home()">처음으로</button>
      </div>`;
   }catch(_err){
@@ -688,7 +735,7 @@ window.dashLive = async function(){
   const rows = data.map(a=>`
     <tr class="att-row" onclick="dashDetail('${a.id}')">
       <td><b>${esc(a.students?.name)}</b><br><span class="small">${fmtDate(a.taken_at)}</span></td>
-      <td>${roundLabel(a)}<br><span class="small">${isDiag(a)?"전범위":(a.new_units||[]).join(",")+"단원"}</span></td>
+      <td>${roundLabel(a)}<br><span class="small">${isDiag(a)?"전범위":unitNames(a.new_units)}</span></td>
       <td>${newLabel(a)} <b>${a.new_score}/${a.new_total}</b>${a.rev_total?`<br>복습 <b>${a.rev_score}/${a.rev_total}</b>`:""}</td>
       <td>›</td>
     </tr>`).join("");
@@ -705,7 +752,7 @@ window.dashDetail = async function(attemptId, extraPanel){
   const reviewN = items.filter(it=>it.needs_review).length;
   const rows = items.map(it=>`
     <tr>
-      <td><b>${esc(it.en)}</b> <span class="small">${it.unit}단원${it.corrected?" · ✏️수정됨":""}</span></td>
+      <td><b>${esc(it.en)}</b> <span class="small">${unitName(it.unit)}${it.corrected?" · ✏️수정됨":""}</span></td>
       <td>${esc(it.answer)||'<span class="small">(무응답)</span>'}</td>
       <td class="${it.correct?"ok":"no"}">${it.correct?"O":"X"}${it.needs_review?' <span title="감수 대기">⚠️</span>':''}</td>
       <td><button class="btn-ghost btn-sm" onclick="teacherFlip('${it.id}','${attemptId}')">뒤집기</button></td>
@@ -812,7 +859,7 @@ window.makeReport = async function(attemptId){
   ctx.font = "bold 34px 'Malgun Gothic', sans-serif";
   ctx.fillText("📘 단어시험 결과", pad, 52);
   ctx.font = "20px 'Malgun Gothic', sans-serif";
-  ctx.fillText(`${att.students?.name} · ${roundLabel(att)}${isDiag(att)?" (전범위 랜덤)":" ("+(att.new_units||[]).join(", ")+"단원)"} · ${dateStr}`, pad, 88);
+  ctx.fillText(`${att.students?.name} · ${roundLabel(att)}${isDiag(att)?" (전범위 랜덤)":" ("+unitNames(att.new_units)+")"} · ${dateStr}`, pad, 88);
   // 점수
   let y = 158;
   ctx.fillStyle = "#1c2333";
@@ -982,12 +1029,12 @@ window.dashStudentHistory = async function(student){
   const rows = hist.attempts.map(a=>`
     <tr class="att-row" onclick="dashDetail('${a.id}')">
       <td>${roundLabel(a)}<br><span class="small">${fmtDate(a.taken_at)}</span></td>
-      <td>${isDiag(a)?"전범위":(a.new_units||[]).join(",")+"단원"}</td>
+      <td>${isDiag(a)?"전범위":unitNames(a.new_units)}</td>
       <td>${newLabel(a)} <b>${a.new_score}/${a.new_total}</b>${a.rev_total?`<br>복습 <b>${a.rev_score}/${a.rev_total}</b>`:""}</td>
       <td>›</td>
     </tr>`).join("");
   dashShell(`<h2>${esc(student.name)}</h2>
-    <div class="flag">진도: ${hist.covered.length ? hist.covered.join(", ")+"단원 완료" : "아직 없음"} · 누적 오답 풀 ${hist.wrongPool.length}개</div>
+    <div class="flag">진도: ${hist.covered.length ? unitNames(hist.covered)+" 완료" : "아직 없음"} · 누적 오답 풀 ${hist.wrongPool.length}개</div>
     ${hist.wrongPool.length?`<div class="pill">🔻 오답 풀: ${hist.wrongPool.map(w=>`${esc(w.en)}(${w.miss})`).join(", ")}</div>`:""}
     <table><tr><th>회차</th><th>범위</th><th>점수</th><th></th></tr>${rows || "<tr><td>응시 기록 없음</td></tr>"}</table>`);
 };
