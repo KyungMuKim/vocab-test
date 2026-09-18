@@ -92,6 +92,11 @@ const CONFIG = {
     schoolByName: { "엄선우":"목일", "황서율":"목일", "강준호":"신남", "김규현":"신서", "이은솔":"신서", "주현우":"신서" },
     unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] }
   },
+  /* ===== 워드마스터 개인 트랙 (2026-09-19, Dean): 안성민 워드마스터 전용 계정 =====
+     class_day "WM" 학생은 능률보카(1~60단원) 대신 WM.unitMin~unitMax 단원(801~805 = DAY 01~05)만 사용한다.
+     진단고사 = 시험범위 전 단어 전수(diagAll:true), 이후 회차는 nCount 단원씩 신규 + 정규 SR 복습(복습 로직은 능률보카와 동일).
+     능률보카 학생에게는 아무 영향 없음(_wm이 null이면 기존 경로 그대로). */
+  WM: { unitMin: 801, unitMax: 805, nCount: 1, diagAll: true },
   EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
   EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
@@ -152,10 +157,10 @@ function autoGrade(ko, ans){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const UNIT_NAME = { 941:"내신 5과", 942:"내신 6과", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과" };  // 시험기간 내신 단어장 표기(학생 화면)
+const UNIT_NAME = { 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과" };  // 시험기간 내신 단어장 표기(학생 화면)
 const unitName = u => UNIT_NAME[u] || (u + "단원");
 const unitNames = arr => ((arr||[]).length ? (arr).map(unitName).join(", ") : "복습만");
-const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
+const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="WM" ? "워드마스터" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
 function err(e){ alert("오류: " + (e.message||e)); throw e; }
 /* 진단고사 여부: new_units가 비어있으면 진단고사 */
 const isDiag = a => ((a && (a.new_units||a.newUnits)) || []).length === 0 && (a.round===0 || a.round===undefined);
@@ -226,6 +231,10 @@ async function buildTest(student, hist){
   const _cu = (CONFIG.CATCHUP_BY_ID||{})[student.id] || {};
   const _skip = _cu.skipUnits || [];
   const round = hist.attempts.length + (_cu.roundOffset || 0);
+  /* 워드마스터 트랙(class_day "WM"): 출제 단원 범위를 능률보카(1~60)에서 WM 단원대로 교체 */
+  const _wm = (student.class_day === "WM") ? (CONFIG.WM || { unitMin:801, unitMax:805, nCount:1, diagAll:true }) : null;
+  const _uLo = _wm ? _wm.unitMin : 1;
+  const _uHi = _wm ? _wm.unitMax : CONFIG.MAX_UNIT;
 
   /* ===== 중도 합류 첫 시험: 진단고사 + 신규 단원 동시 응시 (DIAG_PLUS_BY_ID) =====
      신규 = 지정 단원(item_type "new" → new_score), 진단 = 전범위 랜덤 diagCount문항(item_type "random" → rev_score).
@@ -271,11 +280,12 @@ async function buildTest(student, hist){
 
   /* ===== round 0 = 진단고사: 능률보카 전범위에서 랜덤 DIAG_COUNT문항 ===== */
   if(round === 0){
-    const { data: allWords, error } = await sb.from("words").select("id,en,ko,unit").lte("unit", 60);
+    const { data: allWords, error } = await sb.from("words").select("id,en,ko,unit").gte("unit", _uLo).lte("unit", _uHi);
     if(error) err(error);
-    const items = shuffle(allWords).slice(0, CONFIG.DIAG_COUNT)
+    const _diagN = _wm ? (_wm.diagAll ? (allWords||[]).length : (_wm.diagCount || CONFIG.DIAG_COUNT)) : CONFIG.DIAG_COUNT;  // 워드마스터: 시험범위 전 단어 전수
+    const items = shuffle(allWords).slice(0, _diagN)
       .map(w => ({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
-    return { round, newUnits: [], items, review: [], diag: true };
+    return { round, newUnits: [], items, review: [], diag: true, wm: !!_wm };
   }
 
   /* ===== 이후 회차: 신규 단원 + 복습 ===== */
@@ -289,7 +299,8 @@ async function buildTest(student, hist){
 
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
   let nCount;
-  if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
+  if(_wm){ nCount = _wm.nCount || 1; }            // 워드마스터: 회차당 신규 1 DAY(40문항)
+  else if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
     nCount = (dowKST === 5) ? 2 : 1;
     if(student.name === "서승원") nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 상시 체제(2026-07-27~, Dean): 월 2단원·금 1단원 — 회차 parity(짝=2/홀=1)로 구현해 보강 요일 무관. r4(월)=[5,6], r5(금)=1단원, r6(월)=2단원 …
     if(student.name === "서승원" && round >= 12) nCount = (round % 2 === 0) ? 1 : 2;  // 서승원 parity 반전(2026-08-24~, Dean): r11(8/24 월)이 1단원으로 나가면서 요일-단원수가 어긋남 → 12차부터 짝수회차=1단원·홀수회차=2단원. 12차=[17] 24문항, 13차=[18,19] …
@@ -303,7 +314,7 @@ async function buildTest(student, hist){
     if(student.class_day === "월금") nCount = 3;  // 월금반(김준엽, 2026-08-10~, Dean): 매 회차 신규 3단원 고정(요일·parity 무관). r1(금)=[1,2,3], r2(월)=[4,5,6], r3(금)=[7,8,9] …
   }
   const remaining = [];
-  for(let u=1; u<=CONFIG.MAX_UNIT; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
+  for(let u=_uLo; u<=_uHi; u++) if(!hist.covered.includes(u) && !_skip.includes(u)) remaining.push(u);
   const _fu = (CONFIG.FORCE_UNITS_BY_ID||{})[student.id];
   let newUnits;
   if(_exOn){
@@ -350,7 +361,7 @@ async function buildTest(student, hist){
   let randIds = [];
   const needFill = Math.min(CONFIG.REVIEW_MIN, revMax) - (wrongs.length + srs.length);
   if(!isPostDiag && needFill > 0){
-    const { data: allW, error: ea } = await sb.from("words").select("id").lte("unit", 60);
+    const { data: allW, error: ea } = await sb.from("words").select("id").gte("unit", _uLo).lte("unit", _uHi);
     if(ea) err(ea);
     const seen = new Set(hist.seenIds);
     const cand = (allW||[]).map(w=>w.id).filter(id => !seen.has(id) && !pickedIds.has(id) && !newIdSet.has(id));
@@ -494,7 +505,7 @@ window.proceedStudent = async function(student, resume){
       ? `<div class="flag amber">⚠️ 방금 전(${fmtDate(last.taken_at)})에 이미 응시한 기록이 있어요. 본인·회차가 맞는지 다시 확인하세요.</div>` : "";
     let head;
     if(test.diag){
-      head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — 능률보카 전범위 랜덤 <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
+      head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — ${test.wm ? "워드마스터 1~5단원 전 단어" : "능률보카 전범위 랜덤"} <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
     } else if(test.diagPlus){
       head = `📘 <b>진단고사 + 신규</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (<b>${test.items.length}문항</b>)`
            + `<br>🧭 진단: 능률보카 전범위 랜덤 <b>${test.review.length}문항</b>`
