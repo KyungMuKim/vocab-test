@@ -92,6 +92,13 @@ const CONFIG = {
     schoolByName: { "엄선우":"목일", "황서율":"목일", "강준호":"신남", "김규현":"신서", "이은솔":"신서", "주현우":"신서" },
     unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] }
   },
+  /* ===== 한→영 시험 모드 (2026-09-22, Dean): 뜻을 보고 영어 단어를 쓰는 방식 + 첫 글자 힌트 =====
+     시험기간 학교반(EXAM_MODE.schoolByName에 이름이 있는 학생)만 적용 — 신규·복습 전 문항.
+     문법크루·개인수업·정규 회차는 영향 없음. rounds가 비어 있으면 untilKST까지 전 회차 적용.
+     active:false 또는 untilKST 경과 시 자동으로 영→한으로 복귀. */
+  /* rounds: [] = 기간 내 전 회차. examUnitsOnly:true = 내신 단어(unit >= EXAM_UNIT_MIN)만 한영,
+     능률보카 복습 문항은 영한 유지 (2026-09-23 Dean 확정). */
+  KOEN_MODE: { active: true, untilKST: "2026-10-05", rounds: [], hintChars: 1, examUnitsOnly: true },
   /* ===== 워드마스터 개인 트랙 (2026-09-19, Dean): 안성민 워드마스터 전용 계정 =====
      class_day "WM" 학생은 능률보카(1~60단원) 대신 WM.unitMin~unitMax 단원(801~805 = DAY 01~05)만 사용한다.
      진단고사 = 시험범위 전 단어 전수(diagAll:true), 이후 회차는 nCount 단원씩 신규 + 정규 SR 복습(복습 로직은 능률보카와 동일).
@@ -151,6 +158,52 @@ function autoGrade(ko, ans){
   }
   if(fuzzy) return { correct:true, review:true };
   return { correct:false, review: parts.join("").length>=2 };
+}
+
+/* ===== 한→영 채점 (2026-09-22): 철자 비교. 5글자 이상에서 한 글자 오타는 정답+감수 ===== */
+const normEn = s => (s||"").normalize("NFC").toLowerCase().replace(/[^a-z0-9]/g,"");
+function lev(a,b){
+  const m=a.length, n=b.length; if(!m||!n) return Math.max(m,n);
+  let prev=[...Array(n+1).keys()], cur=new Array(n+1);
+  for(let i=1;i<=m;i++){ cur[0]=i;
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    const t=prev; prev=cur; cur=t; }
+  return prev[n];
+}
+function autoGradeEn(en, ans, ko){
+  const a = normEn(ans); if(!a) return { correct:false, review:false };
+  const t = normEn(en);
+  if(a === t) return { correct:true, review:false };
+  /* 교재가 "(비슷한말 X)"로 제시한 단어를 쓴 경우 — 오답 확정 대신 감수로 넘김 (반대말은 제외) */
+  const _syn = [];
+  (Array.isArray(ko)?ko:[ko]).forEach(k => String(k||"").replace(/비슷한말\s*([A-Za-z][A-Za-z' -]*)/g, (m,w)=>{ const n=normEn(w); if(n) _syn.push(n); return m; }));
+  if(_syn.indexOf(a) >= 0) return { correct:false, review:true };
+  const d = lev(a,t);
+  /* 글자 수가 다른 한 글자 차이(빠짐·중복)만 정답+감수. 같은 길이의 한 글자 치환은
+     depart/deport, tense/dense처럼 다른 단어일 수 있으므로 오답 + 감수 대상. */
+  if(t.length >= 5 && d === 1 && a.length !== t.length) return { correct:true, review:true };
+  return { correct:false, review: d <= 2 };
+}
+/* 문항 단위 방향 판정 — 시험 전체가 한영이어도 내신 단어(unit >= EXAM_UNIT_MIN)에만 적용 */
+function itemKoEn(test, q){
+  if(!test || !test.koen || !q) return false;
+  const km = CONFIG.KOEN_MODE || {};
+  if(km.examUnitsOnly === false) return true;
+  return q.unit >= (CONFIG.EXAM_UNIT_MIN || 940);
+}
+/* 한영 제시어에서 영어가 든 괄호 힌트 제거 — "(비슷한말 garbage)"가 정답을 흘림.
+   품사 표기 "(명)/(동)/(형)" 등 한글만 든 괄호는 남긴다. */
+const stripEnHints = s => String(s||"")
+  .replace(/\([^)]*[A-Za-z][^)]*\)/g," ")
+  .replace(/\s{2,}/g," ").replace(/\s+([,·\/])/g,"$1").trim().replace(/[,·\/]\s*$/,"");
+/* 첫 글자 힌트: 알파벳 n개만 남기고 나머지는 _, 공백·기호는 그대로 (sign up for → s___ __ ___) */
+function enHint(en, n){
+  n = Math.max(1, n||1); let shown = 0;
+  return (en||"").split("").map(ch=>{
+    if(!/[A-Za-z]/.test(ch)) return ch;
+    if(shown < n){ shown++; return ch; }
+    return "_";
+  }).join("");
 }
 
 /* ================= 유틸 ================= */
@@ -296,6 +349,11 @@ async function buildTest(student, hist){
   const _exCrew = _emLive && (_em.crew||[]).includes(student.name);
   const _exSchool = _emLive ? (_em.schoolByName||{})[student.name] : null;
   const _exOn = _emLive && (_exCrew || !!_exSchool);
+  /* 한→영 모드(2026-09-22): 시험기간 학교반 + 지정 회차에만 */
+  const _km = CONFIG.KOEN_MODE || {};
+  const _koen = !!_km.active && !!_exSchool
+             && (!_km.untilKST || _todayKST <= _km.untilKST)
+             && (!((_km.rounds||[]).length) || (_km.rounds||[]).includes(round));
 
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
   let nCount;
@@ -386,7 +444,7 @@ async function buildTest(student, hist){
   }
 
   if(!items.length && !review.length) return null;
-  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew };
+  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, koen: _koen, koenHint: (_km.hintChars || 1) };
 }
 
 /* ================= 반 통계 (신규/복습 각각) ================= */
@@ -520,7 +578,8 @@ window.proceedStudent = async function(student, resume){
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
-             + (test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "");
+             + (test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "")
+             + (test.koen ? `<br><span class="small">⚠️ <b>내신 단어</b>는 <b>한→영</b>이에요. 뜻을 보고 <b>영어 단어</b>를 쓰면 되고, <b>첫 글자는 힌트</b>로 보여 줍니다. (복습 문항은 지금까지처럼 뜻 쓰기예요.)</span>` : "");
       }
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
@@ -540,6 +599,7 @@ window.startTest = function(){
 };
 function question(){
   const i = S.idx, q = S.queue[i], total = S.queue.length;
+  const koen = itemKoEn(S.test, q);
   const badge = q.type==="new" ? (S.test.diag?'<span class="badge b-diag">진단</span>':'<span class="badge b-new">신규</span>')
     : q.type==="wrong" ? '<span class="badge b-wrong">복습·오답</span>'
     : q.type==="sr" ? '<span class="badge b-random">복습·주기</span>'
@@ -548,8 +608,9 @@ function question(){
    <div class="card">
      <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
      <div class="progress"><div style="width:${(i/total*100).toFixed(1)}%"></div></div>
-     <div class="word">${esc(q.en)}${badge}</div>
-     <input type="text" id="ans" placeholder="한글 뜻 입력" autocomplete="off" value="${esc(S.answers[i])}">
+     <div class="word">${koen ? esc(stripEnHints((q.ko||[]).join(" / "))) : esc(q.en)}${badge}</div>
+     ${koen ? `<div class="small" style="margin:-4px 0 8px">첫 글자 힌트 &nbsp;<b style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;letter-spacing:2px">${esc(enHint(q.en, S.test.koenHint||1))}</b></div>` : ""}
+     <input type="text" id="ans" placeholder="${koen ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
      <div class="row">
        ${i>0?'<button class="btn-ghost" onclick="nav(-1)">← 이전</button>':""}
        <button class="btn-primary" onclick="nav(1)">${i===total-1?"제출하기":"다음 →"}</button>
@@ -564,7 +625,7 @@ window.nav = function(d){
   saveDraft();
   const nx = S.idx + d;
   if(nx >= S.queue.length){
-    S.graded = S.queue.map((q,i)=>{ const g = autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
+    S.graded = S.queue.map((q,i)=>{ const g = itemKoEn(S.test, q) ? autoGradeEn(q.en, S.answers[i], q.ko) : autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
     reviewScreen();
     return;
   }
@@ -575,7 +636,9 @@ window.nav = function(d){
 function reviewScreen(){
   const rows = S.graded.map((g,i)=>`
     <tr>
-      <td><b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span></td>
+      <td>${itemKoEn(S.test,g)
+            ? `<b>${esc(stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
+            : `<b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span>`}</td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
       <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="감수 대상">⚠️</span>':''}</td>
       <td><button class="btn-ghost btn-sm" onclick="flip(${i})">수정</button></td>
