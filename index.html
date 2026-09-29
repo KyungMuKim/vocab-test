@@ -88,6 +88,7 @@ const CONFIG = {
     untilKST: "2026-10-05",
     reviewMax: 20,                                                  // 일반 학생 복습 상한
     crewReviewMax: 40,                                              // 문법크루 복습 상한
+    schoolNoReviewFrom: "2026-09-29",   // 이 날짜(KST)부터 학교반은 복습 없이 내신 단어만 (2026-09-27 Dean)
     crew: ["신예지","홍서연","박서진"],                                  // 신규 없음 · 복습풀만
     schoolByName: { "엄선우":"목일", "황서율":"목일", "강준호":"신남", "김규현":"신서", "이은솔":"신서", "주현우":"신서" },
     unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] }
@@ -398,7 +399,7 @@ async function buildTest(student, hist){
      1회차(진단 직후): 진단 오답 전부(최대 DIAG_WRONG_CAP) — 랜덤/주기 없음
      2회차 이후: 오답 전부 + SR 도래(상한 SR_CAP, 취약 우선) + REVIEW_MIN까지 전범위 probe (합산 ≤ REVIEW_MAX) */
   let review = [];
-  const revMax = _exOn ? (_exCrew ? (_em.crewReviewMax || 40) : (_em.reviewMax || 20))            // 시험기간 상한(2026-09-14 Dean)
+  const revMax = (_exSchool && _em.schoolNoReviewFrom && _todayKST >= _em.schoolNoReviewFrom) ? 0 : _exOn ? (_exCrew ? (_em.crewReviewMax || 40) : (_em.reviewMax || 20))            // 시험기간 상한(2026-09-14 Dean)
                        : ((CONFIG.REVIEW_MAX_BY_NAME||{})[student.name] || CONFIG.REVIEW_MAX);  // 학생별 복습 상한 (2026-07-27)
   const newIdSet = new Set(items.map(w=>w.word_id));
   const isPostDiag = round === 1;
@@ -578,7 +579,7 @@ window.proceedStudent = async function(student, resume){
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
-             + (test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "")
+             + (test.exam && !test.review.length ? '<br><span class="small">중간고사 직전이라 이번엔 학교 내신 단어만 봐요.</span>' : test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "")
              + (test.koen ? `<br><span class="small">⚠️ <b>내신 단어</b>는 <b>한→영</b>이에요. 뜻을 보고 <b>영어 단어</b>를 쓰면 되고, <b>첫 글자는 힌트</b>로 보여 줍니다. (복습 문항은 지금까지처럼 뜻 쓰기예요.)</span>` : "");
       }
     }
