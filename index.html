@@ -226,6 +226,7 @@ const draftKey = id => "vtdraft_" + id;
 function saveDraft(){
   try{ localStorage.setItem(draftKey(S.student.id), JSON.stringify({
     round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag, diagPlus:!!S.test.diagPlus,
+  koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew,
     queue:S.queue, answers:S.answers, idx:S.idx, ts:Date.now(), name:S.student.name
   })); }catch(e){}
 }
@@ -543,8 +544,11 @@ window.proceedStudent = async function(student, resume){
   if(resume){
     const d = loadDraft(student.id);
     if(d && d.queue && d.queue.length){
+      let fl = { koen:d.koen, koenHint:d.koenHint, exam:d.exam, examCrew:d.examCrew };
+  if(d.koen === undefined){ try{ const f = await buildTest(student, hist) || {}; fl = { koen:!!f.koen, koenHint:f.koenHint||1, exam:!!f.exam, examCrew:!!f.examCrew }; }catch(e){ fl = { koen:false }; } }
       S = { student, hist,
         test:{ round:d.round, newUnits:d.newUnits, diag:d.diag, diagPlus:d.diagPlus,
+              koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew,
                 items:d.queue.filter(q=>q.type==="new"), review:d.queue.filter(q=>q.type!=="new") },
         queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0 };
       question();
