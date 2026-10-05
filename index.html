@@ -79,6 +79,11 @@ const CONFIG = {
   WORD_AMNESTY_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": [17,113,160,200,201,216,220,257,323,478,555,586,639,701,716,733,768,826,842,843,1046,1390,1429,1437] },  // 단어 단위 사면: {student_id:[word_id,..]} — 지정 단어의 모든 기록을 SR 계산에서 무시(회차 무관). 무효 회차의 오답이 이후 회차 복습에 재출제돼 다시 기록된 경우 회차 단위 사면(AMNESTY)으로는 못 걷어내므로 신설. DB기록·결과지·통계 불변. 2026-08-12 황서율: 8/4은 결석일이라 그날 진단 기록 무효(AMNESTY R=8) — 그날 오답 24개가 9차(8/11) 복습에 재출제돼 17개가 다시 오답으로 남은 것까지 함께 제거 (Dean 지시). 사면 단어는 seenIds에서도 빠져 전범위 probe 후보로 자연 복귀
   RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] },
                  "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { round: 10, units: [971], label: "수능완성 단어시험" } },  // 2026-10-05 김준엽(Dean): 10차 = 수능완성 고난도 단어장 1권(unit 971, 142단어)만 — 복습 0. 응시 후 자동 소거. 2권은 unit 972(204단어) — 칠 날 round만 맞춰 다시 지정. 971/972는 EXAM_UNIT_MIN 이상이라 능률보카 SR/복습풀에 섞이지 않음
+  /* ===== 수능완성 모드 (2026-10-05, Dean — 김준엽 한정): 한 시험 상한 cap(150) =====
+     복습 = 수능완성 단어(units) 중 마지막 결과가 오답인 것 전부(miss 많은 순) / 신규 = cap − 복습, 아직 안 본 단어를 단어장 순서(971→972, id순)로.
+     한 번 맞히면 복습에서 빠짐. 이 모드 동안 능률보카 복습은 없음. fromRound 이상 회차에 적용.
+     단어장 소진 + 수능완성 오답 0이면 자동으로 정규(능률보카) 모드 복귀. 일정: 11차 10/7(수)·12차 10/9(금)·13차 10/12(월). */
+  SUNEUNG_BY_ID: { "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { units: [971,972], cap: 150, fromRound: 11, label: "수능완성 단어시험" } },
   FORCE_UNITS_BY_ID: { "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { units: [16,17] } },  // 다음 시험 신규 단원 강제 지정: {student_id:{units:[..]}} — 복습은 정상 출제, 지정 단원 중 하나라도 covered에 들어가면(=응시 완료) 자동 소거. 2026-08-28 안성민 다음 시험 = 신규 [16,17] (Dean 지시)  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   /* ===== 시험기간 모드 (2026-09-14, Dean): 신규 = 학교 내신 단어장(THE BLUEPRINT), 복습 = 능률보카 복습풀에서 상한만 =====
      active를 false로 두거나 untilKST(KST 날짜)를 넘기면 정규 모드로 자동 복귀.
@@ -332,6 +337,37 @@ async function buildTest(student, hist){
     if(_re) err(_re);
     const _ri = shuffle(_rw).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
     return { round, newUnits: _rt.units, items: _ri, review: [], retest: true, retestLabel: _rt.label || "재시험" };
+  }
+
+  /* ===== 수능완성 모드(SUNEUNG_BY_ID): 복습(수능완성 오답 전부) + 신규(cap − 복습, 단어장 순서) — 능률보카 복습 없음 ===== */
+  const _sn = (CONFIG.SUNEUNG_BY_ID||{})[student.id];
+  if(_sn && round >= (_sn.fromRound || 0) && hist.attempts.length){
+    const _cap = _sn.cap || 150;
+    const _ord = Object.fromEntries(hist.attempts.map(a=>[a.id, a.round]));
+    let _si = [];   /* loadHistory는 내신·수능완성 단어를 걸러내고 1000행 제한도 있으므로 여기서 따로 페이지 단위로 조회 */
+    for(let _o=0; ; _o+=1000){
+      const { data: _d, error: _e } = await sb.from("attempt_items").select("attempt_id,word_id,unit,correct,seq")
+        .in("attempt_id", hist.attempts.map(a=>a.id)).in("unit", _sn.units).order("id").range(_o, _o+999);
+      if(_e) err(_e);
+      _si = _si.concat(_d||[]);
+      if(!_d || _d.length < 1000) break;
+    }
+    _si.sort((x,y)=> (_ord[x.attempt_id]-_ord[y.attempt_id]) || (x.seq-y.seq));
+    const _st = {};
+    _si.forEach(it => { if(!it.word_id) return; const w = _st[it.word_id] || (_st[it.word_id] = { last:false, miss:0 }); w.last = !!it.correct; if(!it.correct) w.miss++; });
+    const { data: _sw, error: _se } = await sb.from("words").select("id,en,ko,unit").in("unit", _sn.units);
+    if(_se) err(_se);
+    const _wl = (_sw||[]).slice().sort((a,b)=> (_sn.units.indexOf(a.unit)-_sn.units.indexOf(b.unit)) || (a.id-b.id));
+    const _wrong = _wl.filter(w => _st[w.id] && !_st[w.id].last)
+      .sort((a,b)=> (_st[b.id].miss-_st[a.id].miss) || (_sn.units.indexOf(a.unit)-_sn.units.indexOf(b.unit)) || (a.id-b.id))
+      .slice(0, _cap);
+    const _fresh = _wl.filter(w => !_st[w.id]).slice(0, Math.max(0, _cap - _wrong.length));
+    if(_wrong.length || _fresh.length){
+      const _mk = (w, type) => ({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type });
+      return { round, newUnits: [...new Set(_fresh.map(w=>w.unit))], items: shuffle(_fresh.map(w=>_mk(w,"new"))),
+               review: shuffle(_wrong.map(w=>_mk(w,"wrong"))), retest: true, retestLabel: _sn.label || "수능완성", suneung: true };
+    }
+    /* 단어장 소진 + 오답 0 → 아래 정규 모드로 진행 */
   }
 
   /* ===== round 0 = 진단고사: 능률보카 전범위에서 랜덤 DIAG_COUNT문항 ===== */
