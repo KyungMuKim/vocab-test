@@ -97,8 +97,13 @@ const CONFIG = {
     schoolNoReviewFrom: "2026-09-29",   // 이 날짜(KST)부터 학교반은 복습 없이 내신 단어만 (2026-09-27 Dean)
     crew: ["신예지","홍서연","박서진"],                                  // 신규 없음 · 복습풀만
     schoolByName: { "엄선우":"목일", "황서율":"목일", "강준호":"신남", "김규현":"신서", "이은솔":"신서", "주현우":"신서" },
-    unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] }
+    unitsBySchool: { "목일":[941,942], "신남":[951,952], "신서":[961,962] },
+    extraRoundByName: { "엄선우": 23, "황서율": 22 },  // 기간 종료 후 1회 연장(2026-10-06 Dean): 지정 회차에만 직전과 같은 내신 단어(두 과 전부·복습 없음) 재응시. 응시하면 round가 넘어가 자동 소거
+    extraUnitsBySchool: { "목일":[943,944] },          // 연장 회차 신규 = 학교 유인물 Word List(THE FOOTNOTE 기준 L5 38 + L6 40, 2026-10-06 Dean)
+    extraEnEn: true                                     // 연장 회차는 영영: 영어 정의(EN_DEF)를 보고 영어 단어 쓰기 + 첫 글자 힌트 (2026-10-06 Dean)
   },
+  /* 영영 정의 — 목일 L5·L6 학교 유인물 Word List(THE FOOTNOTE, unit 943·944) 78표제어. 정답 단어가 정의에 노출되지 않게 작성 (2026-10-06) */
+  EN_DEF: {"adventure": "an exciting and sometimes dangerous experience or journey", "life jacket": "a vest that keeps you floating in the water so you do not drown", "app": "a program you download and use on a phone or tablet", "lost": "not able to be found; missing", "background": "the area or scenery behind the main thing in a picture or game", "maker": "a person or company that creates or builds something", "be interested in": "to want to know or learn more about something", "monster": "a large, scary imaginary creature", "be into": "to like something very much and spend a lot of time on it", "musician": "a person who plays music or writes music", "begin": "to start doing something", "own": "belonging to yourself and not to anyone else", "cap": "a soft hat with a curved part at the front", "part": "a piece or section of a whole thing", "character": "a person or creature in a story, movie, or game", "present": "to give something to someone, or to show and explain something to a group of people", "code": "to write instructions for a computer program", "publish": "to make a book, game, or app available for people to buy or use", "corner": "the place where two walls, streets, or sides meet", "review": "a piece of writing that says what someone thinks of a book, movie, game, or product", "factory": "a building where people and machines make products", "share": "to use or have something together with other people", "famous": "known by very many people", "someday": "at some time in the future", "finally": "after a long time; at last", "soon": "in a short time from now", "giant": "extremely big", "stage": "one step or period in a process or game", "go through": "to pass from one side of something to the other", "test": "to try something to see if it works well", "hobby": "something you do for fun in your free time", "tip": "a small piece of useful advice", "island": "a piece of land with water all around it", "tower": "a tall, narrow building or structure", "kind": "a type or sort of something", "useful": "helpful; good for doing something", "lake": "a large area of water with land all around it", "writer": "a person who writes books, stories, or articles", "actually": "in fact; really", "near": "not far from; close to", "block": "the distance along a street from one corner to the next", "plan": "an idea about what you are going to do and how you will do it", "bookstore": "a shop that sells books", "prize": "something you win in a contest or game", "bored": "tired and unhappy because nothing is interesting", "pumpkin": "a large round orange vegetable used for pies and Halloween", "cheer": "to shout to support or encourage someone", "restroom": "a room with toilets in a public building", "colorful": "having many bright colors", "salmon": "a large fish with pink flesh that swims up rivers", "contest": "a competition to see who is the best at something", "sand": "very small grains of rock that cover beaches and deserts", "crop": "a plant such as rice or corn that farmers grow", "set": "(of the sun or moon) to go down below the horizon", "easily": "without difficulty", "sign up for": "to put your name on a list to join a class, club, or activity", "enter": "to take part in a competition", "state": "one of the parts of a country such as the USA, with its own government", "fair": "an outdoor event with rides, games, food, and contests", "straight": "in a direct line, without turning", "festival": "a special time when people celebrate with music, food, and events", "sunlight": "the light that comes from the sun", "floor": "one level of a building, such as the second or third level", "tasty": "having a very good flavor", "food court": "an area in a shopping mall with many small restaurants and shared tables", "top": "the highest part of something", "fresh": "recently made, picked, or caught; not old or spoiled", "turtle": "a slow animal with a hard shell that can live in water", "go up": "to move to a higher place, for example by stairs", "uncle": "the brother of your mother or father", "guess": "to give an answer when you are not sure it is correct", "vegetable": "a plant or part of a plant that we eat, such as a carrot or a potato", "huge": "very, very large", "view": "what you can see from a place, especially a beautiful scene", "midnight": "twelve o'clock at night", "village": "a very small town in the countryside", "moonlight": "the light that comes from the moon at night", "wood": "the hard material that trees are made of"},
   /* ===== 한→영 시험 모드 (2026-09-22, Dean): 뜻을 보고 영어 단어를 쓰는 방식 + 첫 글자 힌트 =====
      시험기간 학교반(EXAM_MODE.schoolByName에 이름이 있는 학생)만 적용 — 신규·복습 전 문항.
      문법크루·개인수업·정규 회차는 영향 없음. rounds가 비어 있으면 untilKST까지 전 회차 적용.
@@ -203,6 +208,8 @@ function itemKoEn(test, q){
 const stripEnHints = s => String(s||"")
   .replace(/\([^)]*[A-Za-z][^)]*\)/g," ")
   .replace(/\s{2,}/g," ").replace(/\s+([,·\/])/g,"$1").trim().replace(/[,·\/]\s*$/,"");
+/* 한영 제시어: 영영 회차(test.eedef)면 영어 정의, 아니면 한글 뜻(영문 괄호 제거) */
+const koenPrompt = (test, q) => (test && test.eedef && (CONFIG.EN_DEF||{})[q.en]) ? CONFIG.EN_DEF[q.en] : stripEnHints((q.ko||[]).join(" / "));
 /* 첫 글자 힌트: 알파벳 n개만 남기고 나머지는 _, 공백·기호는 그대로 (sign up for → s___ __ ___) */
 function enHint(en, n){
   n = Math.max(1, n||1); let shown = 0;
@@ -217,7 +224,7 @@ function enHint(en, n){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const UNIT_NAME = { 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권" };  // 시험기간 내신 단어장 표기(학생 화면)
+const UNIT_NAME = { 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 943:"내신 5과(유인물)", 944:"내신 6과(유인물)", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권" };  // 시험기간 내신 단어장 표기(학생 화면)
 const unitName = u => UNIT_NAME[u] || (u + "단원");
 const unitNames = arr => ((arr||[]).length ? (arr).map(unitName).join(", ") : "복습만");
 const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="WM" ? "워드마스터" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
@@ -232,7 +239,7 @@ const draftKey = id => "vtdraft_" + id;
 function saveDraft(){
   try{ localStorage.setItem(draftKey(S.student.id), JSON.stringify({
     round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag, diagPlus:!!S.test.diagPlus,
-  koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew,
+  koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew, eedef:!!S.test.eedef,
     queue:S.queue, answers:S.answers, idx:S.idx, ts:Date.now(), name:S.student.name
   })); }catch(e){}
 }
@@ -384,14 +391,15 @@ async function buildTest(student, hist){
   /* ===== 시험기간 모드 판정 ===== */
   const _em = CONFIG.EXAM_MODE || {};
   const _todayKST = new Date(Date.now() + 9*3600*1000).toISOString().slice(0,10);
-  const _emLive = !!_em.active && (!_em.untilKST || _todayKST <= _em.untilKST);
+  const _emExtra = (_em.extraRoundByName||{})[student.name] === round;  // 학생별 1회 연장(2026-10-06)
+  const _emLive = !!_em.active && (_emExtra || !_em.untilKST || _todayKST <= _em.untilKST);
   const _exCrew = _emLive && (_em.crew||[]).includes(student.name);
   const _exSchool = _emLive ? (_em.schoolByName||{})[student.name] : null;
   const _exOn = _emLive && (_exCrew || !!_exSchool);
   /* 한→영 모드(2026-09-22): 시험기간 학교반 + 지정 회차에만 */
   const _km = CONFIG.KOEN_MODE || {};
   const _koen = !!_km.active && !!_exSchool
-             && (!_km.untilKST || _todayKST <= _km.untilKST)
+             && (_emExtra || !_km.untilKST || _todayKST <= _km.untilKST)
              && (!((_km.rounds||[]).length) || (_km.rounds||[]).includes(round));
 
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
@@ -420,7 +428,8 @@ async function buildTest(student, hist){
     else {
       const _list = ((_em.unitsBySchool||{})[_exSchool] || []);
       const _rest = _list.filter(u => !hist.covered.includes(u));
-      newUnits = _rest.length ? [_rest[0]] : _list.slice();
+      const _xu = _emExtra ? (_em.extraUnitsBySchool||{})[_exSchool] : null;
+      newUnits = _xu ? _xu.slice() : _rest.length ? [_rest[0]] : _list.slice();
     }
   } else {
     newUnits = (_fu && !_fu.units.some(u=>hist.covered.includes(u))) ? _fu.units.slice() : remaining.slice(0, nCount);  // FORCE_UNITS_BY_ID: 지정 단원이 아직 미응시면 그대로 출제(요일·parity 무시)
@@ -483,7 +492,7 @@ async function buildTest(student, hist){
   }
 
   if(!items.length && !review.length) return null;
-  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, koen: _koen, koenHint: (_km.hintChars || 1) };
+  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, koen: _koen, koenHint: (_km.hintChars || 1), eedef: _koen && _emExtra && !!_em.extraEnEn };
 }
 
 /* ================= 반 통계 (신규/복습 각각) ================= */
@@ -581,11 +590,11 @@ window.proceedStudent = async function(student, resume){
   if(resume){
     const d = loadDraft(student.id);
     if(d && d.queue && d.queue.length){
-      let fl = { koen:d.koen, koenHint:d.koenHint, exam:d.exam, examCrew:d.examCrew };
-  if(d.koen === undefined){ try{ const f = await buildTest(student, hist) || {}; fl = { koen:!!f.koen, koenHint:f.koenHint||1, exam:!!f.exam, examCrew:!!f.examCrew }; }catch(e){ fl = { koen:false }; } }
+      let fl = { koen:d.koen, koenHint:d.koenHint, exam:d.exam, examCrew:d.examCrew, eedef:d.eedef };
+  if(d.koen === undefined){ try{ const f = await buildTest(student, hist) || {}; fl = { koen:!!f.koen, koenHint:f.koenHint||1, exam:!!f.exam, examCrew:!!f.examCrew, eedef:!!f.eedef }; }catch(e){ fl = { koen:false }; } }
       S = { student, hist,
         test:{ round:d.round, newUnits:d.newUnits, diag:d.diag, diagPlus:d.diagPlus,
-              koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew,
+              koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew, eedef:!!fl.eedef,
                 items:d.queue.filter(q=>q.type==="new"), review:d.queue.filter(q=>q.type!=="new") },
         queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0 };
       question();
@@ -620,8 +629,8 @@ window.proceedStudent = async function(student, resume){
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
-             + (test.exam && !test.review.length ? '<br><span class="small">중간고사 직전이라 이번엔 학교 내신 단어만 봐요.</span>' : test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "")
-             + (test.koen ? `<br><span class="small">⚠️ <b>내신 단어</b>는 <b>한→영</b>이에요. 뜻을 보고 <b>영어 단어</b>를 쓰면 되고, <b>첫 글자는 힌트</b>로 보여 줍니다. (복습 문항은 지금까지처럼 뜻 쓰기예요.)</span>` : "");
+             + (test.eedef ? '<br><span class="small">📗 같은 내신 단어로 한 번 더 보는 시험이에요. 이번엔 <b>영영</b> — <b>영어 설명</b>을 읽고 맞는 <b>영어 단어</b>를 쓰면 되고, <b>첫 글자는 힌트</b>로 보여 줘요.</span>' : test.exam && !test.review.length ? '<br><span class="small">중간고사 직전이라 이번엔 학교 내신 단어만 봐요.</span>' : test.exam ? `<br><span class="small">시험기간이라 신규는 학교 내신 단어장에서, 복습은 지금까지 틀린 단어에서만 나와요.</span>` : "")
+             + (test.koen && !test.eedef ? `<br><span class="small">⚠️ <b>내신 단어</b>는 <b>한→영</b>이에요. 뜻을 보고 <b>영어 단어</b>를 쓰면 되고, <b>첫 글자는 힌트</b>로 보여 줍니다. (복습 문항은 지금까지처럼 뜻 쓰기예요.)</span>` : "");
       }
     }
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
@@ -650,7 +659,7 @@ function question(){
    <div class="card">
      <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
      <div class="progress"><div style="width:${(i/total*100).toFixed(1)}%"></div></div>
-     <div class="word">${koen ? esc(stripEnHints((q.ko||[]).join(" / "))) : esc(q.en)}${badge}</div>
+     <div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}</div>
      ${koen ? `<div class="small" style="margin:-4px 0 8px">첫 글자 힌트 &nbsp;<b style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;letter-spacing:2px">${esc(enHint(q.en, S.test.koenHint||1))}</b></div>` : ""}
      <input type="text" id="ans" placeholder="${koen ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
      <div class="row">
@@ -679,7 +688,7 @@ function reviewScreen(){
   const rows = S.graded.map((g,i)=>`
     <tr>
       <td>${itemKoEn(S.test,g)
-            ? `<b>${esc(stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
+            ? `<b>${esc(S.test.eedef ? koenPrompt(S.test, g) : stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
             : `<b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span>`}</td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
       <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="감수 대상">⚠️</span>':''}</td>
