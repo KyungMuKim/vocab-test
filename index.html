@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-
+  width, initial-scale=1, maximum-scale=1">
 <title>단어시험</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -120,7 +121,8 @@ const CONFIG = {
   /* ===== 복습만 보는 날 (2026-10-06, Dean): 지정 날짜(KST)에 지정 학생은 신규 없이 능률보카 복습풀만 (문법크루 방식) =====
      그날이 지나면 자동으로 정규 모드 — 진도(covered)는 소모되지 않으므로 다음 회차 신규 단원은 그대로 이어짐. */
   REVIEW_ONLY_BY_DATE: { "2026-10-06": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진"], reviewMax: 40 },   // 신서중 3명 + 문법크루 3명
-                         "2026-10-08": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진","강준호","황서율","엄선우"], reviewMax: 40 } },  // 10/8(목): 강준호 합류 + 목일 황서율·엄선우도 복습만 (Dean 2026-10-06)
+                        "2026-10-09": { names: ["홍서연","이은솔"], reviewMax: 40 }, 
+                        "2026-10-08": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진","강준호","황서율","엄선우"], reviewMax: 40 } },  // 10/8(목): 강준호 합류 + 목일 황서율·엄선우도 복습만 (Dean 2026-10-06)
   CLASS_DOW_RULE_FROM: "2026-10-09",  // 통합반 요일 기준 전환일(2026-10-08 Dean): 이 날짜(KST)부터 화=신규 2단원·그 외 요일=1단원 (회차 parity 폐기 — 시험기간 동안 학생별 회차가 흩어짐). 10/8(목) 복습만 시험엔 영향 없음
   EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
