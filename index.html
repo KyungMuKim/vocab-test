@@ -117,6 +117,35 @@ const CONFIG = {
      진단고사 = 시험범위 전 단어 전수(diagAll:true), 이후 회차는 nCount 단원씩 신규 + 정규 SR 복습(복습 로직은 능률보카와 동일).
      능률보카 학생에게는 아무 영향 없음(_wm이 null이면 기존 경로 그대로). */
   WM: { unitMin: 801, unitMax: 805, nCount: 1, diagAll: true },
+  /* 문장 빈칸 시험(CLOZE_BY_ID, 2026-10-09 Dean): 지정 학생은 untilKST까지 매 응시를 '영어 문장 빈칸 쓰기'로 대체.
+     한글 해석·첫 글자 힌트 없음. 문항 = 빈칸 하나(정답은 words unit 981의 en과 같은 철자). 복습 0.
+     unit 981 = EXAM_UNIT_MIN(940) 이상이라 SR/복습풀에 섞이지 않음. {1}{2} = 문장 속 빈칸 자리 */
+  CLOZE_BY_ID: { "66230950-25c4-4ebb-98b9-5a7191f7d8ef": { untilKST: "2026-10-14", unit: 981, label: "워드마스터 Review Test (Day 1~4) · 문장 빈칸",
+    items: [
+      ["Sociologists have a desire to be {1} with their words, beliefs, {2}, and deeds.", ["consistent","attitudes"]],
+      ["His father, who practiced law, {1} him to read a lot.", ["encouraged"]],
+      ["To be {1} under all circumstances requires strong {2}.", ["courageous","determination"]],
+      ["We want you to {1} less and recycle more.", ["consume"]],
+      ["There are lots of courses {1} that are good.", ["available"]],
+      ["They found rare {1} in the simple songs that they sang aboard their ships.", ["comfort"]],
+      ["National Galleries in Washington are maintained at public {1}.", ["expense"]],
+      ["Standard English allows access to certain educational and {1} opportunities, which is the {2} reason for teaching it.", ["economic","primary"]],
+      ["This support will {1} better-prepared employees and higher profits.", ["generate"]],
+      ["Before long more than 3,800 caves surrounding the city had been {1}.", ["discovered"]],
+      ["The {1} role of hand gestures is to mark the points of emphasis in our speech.", ["essential"]],
+      ["You should answer the questions {1}. (두 단어)", ["in detail"]],
+      ["There are many sensations and feelings that we can experience but not fully {1}.", ["defined"]],
+      ["If you learn the {1} techniques, then the passion, if it is genuine, will come through.", ["proper"]],
+      ["He was also dedicated to the {1} of the nation in politics and philosophy.", ["prosperity"]],
+      ["This technology might {1} the life of a man by a hundred years.", ["extend"]],
+      ["Biologists {1} for the human desire for art in other terms.", ["account"]],
+      ["More {1} use of computers will create a serious danger to our health.", ["frequent"]],
+      ["Even the same singer will {1} on two different occasions.", ["vary"]],
+      ["His remarks {1} that he has no intention to get back home.", ["signify"]],
+      ["The city council has been very slow to {1} the needs of the {2} community.", ["meet","disabled"]],
+      ["Expensive products are usually difficult to {1}.", ["manufacture"]],
+      ["Making better decisions when picking out jams or bottles of wine is best done with the emotional brain, which generates its {1} automatically.", ["verdict"]]
+    ] } },
   /* ===== 복습만 보는 날 (2026-10-06, Dean): 지정 날짜(KST)에 지정 학생은 신규 없이 능률보카 복습풀만 (문법크루 방식) =====
      그날이 지나면 자동으로 정규 모드 — 진도(covered)는 소모되지 않으므로 다음 회차 신규 단원은 그대로 이어짐. */
   REVIEW_ONLY_BY_DATE: { "2026-10-06": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진"], reviewMax: 40 },   // 신서중 3명 + 문법크루 3명
@@ -203,6 +232,24 @@ function autoGradeEn(en, ans, ko){
   if(t.length >= 5 && d === 1 && a.length !== t.length) return { correct:true, review:true };
   return { correct:false, review: d <= 2 };
 }
+/* 문장 빈칸 채점(2026-10-09): 철자 그대로면 정답. 5글자 이상에서 글자 수가 다른 한 글자 차이는 정답+감수.
+   그 밖에 무언가 쓴 답은 오답+감수(어형 차이·문맥상 다른 단어는 선생님 판단) */
+function autoGradeCloze(en, ans){
+  const a = normEn(ans); if(!a) return { correct:false, review:false };
+  const t = normEn(en);
+  if(a === t) return { correct:true, review:false };
+  if(t.length >= 5 && lev(a,t) === 1 && a.length !== t.length) return { correct:true, review:true };
+  return { correct:false, review:true };
+}
+/* 문장 빈칸 표시: 현재 빈칸은 강조, 같은 문장의 다른 빈칸은 학생이 이미 쓴 답(없으면 밑줄) */
+function clozeHTML(q, filled){
+  return esc(q.cloze.s).replace(/\{(\d)\}/g, (m, d) => {
+    const n = +d, lab = q.cloze.n > 1 ? ["","①","②","③"][n] : "";
+    if(n === q.cloze.b) return `<span style="display:inline-block;min-width:96px;border-bottom:3px solid #2563eb;color:#2563eb;font-weight:700;text-align:center">${lab||"&nbsp;"}</span>`;
+    const f = (filled||{})[n];
+    return f ? `<u>${esc(f)}</u>` : `<span style="display:inline-block;min-width:70px;border-bottom:2px solid #999">${lab}</span>`;
+  });
+}
 /* 문항 단위 방향 판정 — 시험 전체가 한영이어도 내신 단어(unit >= EXAM_UNIT_MIN)에만 적용 */
 function itemKoEn(test, q){
   if(!test || !test.koen || !q) return false;
@@ -231,7 +278,7 @@ function enHint(en, n){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const UNIT_NAME = { 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 943:"내신 5과(유인물)", 944:"내신 6과(유인물)", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권" };  // 시험기간 내신 단어장 표기(학생 화면)
+const UNIT_NAME = { 981:"워드마스터 문장 빈칸", 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 943:"내신 5과(유인물)", 944:"내신 6과(유인물)", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권" };  // 시험기간 내신 단어장 표기(학생 화면)
 const unitName = u => UNIT_NAME[u] || (u + "단원");
 const unitNames = arr => ((arr||[]).length ? (arr).map(unitName).join(", ") : "복습만");
 const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="WM" ? "워드마스터" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
@@ -315,6 +362,21 @@ async function buildTest(student, hist){
   const _wm = (student.class_day === "WM") ? (CONFIG.WM || { unitMin:801, unitMax:805, nCount:1, diagAll:true }) : null;
   const _uLo = _wm ? _wm.unitMin : 1;
   const _uHi = _wm ? _wm.unitMax : CONFIG.MAX_UNIT;
+
+  /* ===== 문장 빈칸 시험(CLOZE_BY_ID): 기간 내 응시는 전부 이 형식 — 문장 순서만 섞고, 한 문장의 빈칸들은 연달아 출제 ===== */
+  const _cz = (CONFIG.CLOZE_BY_ID||{})[student.id];
+  const _czToday = new Date(Date.now() + 9*3600*1000).toISOString().slice(0,10);
+  if(_cz && hist.attempts.length && (!_cz.untilKST || _czToday <= _cz.untilKST)){
+    const { data: _cw, error: _ce } = await sb.from("words").select("id,en,ko,unit").eq("unit", _cz.unit);
+    if(_ce) err(_ce);
+    const _byEn = Object.fromEntries((_cw||[]).map(w=>[w.en, w]));
+    const _ci = [];
+    shuffle(_cz.items.map((it,k)=>({ it, k }))).forEach(({it,k}) => it[1].forEach((ans, b) => {
+      const w = _byEn[ans]; if(!w) return;
+      _ci.push({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new", cloze:{ s:it[0], b:b+1, n:it[1].length, k, all:it[1] } });
+    }));
+    if(_ci.length) return { round, newUnits:[_cz.unit], items:_ci, review:[], retest:true, retestLabel:_cz.label || "문장 빈칸", cloze:true };
+  }
 
   /* ===== 중도 합류 첫 시험: 진단고사 + 신규 단원 동시 응시 (DIAG_PLUS_BY_ID) =====
      신규 = 지정 단원(item_type "new" → new_score), 진단 = 전범위 랜덤 diagCount문항(item_type "random" → rev_score).
@@ -633,6 +695,9 @@ window.proceedStudent = async function(student, resume){
     let head;
     if(test.diag){
       head = `📘 <b>진단고사</b> (${classLabel(student.class_day)}) — ${test.wm ? "워드마스터 1~5단원 전 단어" : "능률보카 전범위 랜덤"} <b>${test.items.length}문항</b><br><span class="small">첫 시험은 실력 측정용이라 복습 없이 진행돼요. 여기서 틀린 단어는 다음 복습에 나와요.</span>`;
+    } else if(test.cloze){
+      head = `📘 <b>${test.round}회차 · ${esc(test.retestLabel)}</b> (${classLabel(student.class_day)}) — <b>${test.items.length}문항</b>`
+           + `<br><span class="small">영어 문장을 읽고 <b>빈칸에 들어갈 영어 단어</b>를 쓰면 돼요. 한글 해석과 첫 글자 힌트는 없어요. 문장에 맞는 형태(복수형·과거형 등)로 써 주세요.</span>`;
     } else if(test.diagPlus){
       head = `📘 <b>진단고사 + 신규</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (<b>${test.items.length}문항</b>)`
            + `<br>🧭 진단: 능률보카 전범위 랜덤 <b>${test.review.length}문항</b>`
@@ -680,9 +745,10 @@ function question(){
    <div class="card">
      <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
      <div class="progress"><div style="width:${(i/total*100).toFixed(1)}%"></div></div>
-     <div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}</div>
+     ${q.cloze ? `<div class="word" style="font-size:19px;line-height:1.7;font-weight:500">${clozeHTML(q, Object.fromEntries(S.queue.map((x,j)=>[j,x]).filter(([j,x])=>x.cloze && x.cloze.k===q.cloze.k && j!==i && S.answers[j]).map(([j,x])=>[x.cloze.b, S.answers[j]])))}</div><div class="small" style="margin:-4px 0 8px">${q.cloze.n>1 ? "<b>"+["","①","②","③"][q.cloze.b]+"번</b> 빈칸에 들어갈 영어 단어를 쓰세요." : "빈칸에 들어갈 영어 단어를 쓰세요."}</div>`
+     : `<div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}</div>`}
      ${koen ? `<div class="small" style="margin:-4px 0 8px">첫 글자 힌트 &nbsp;<b style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;letter-spacing:2px">${esc(enHint(q.en, S.test.koenHint||1))}</b></div>` : ""}
-     <input type="text" id="ans" placeholder="${koen ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
+     <input type="text" id="ans" placeholder="${(koen || q.cloze) ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
      <div class="row">
        ${i>0?'<button class="btn-ghost" onclick="nav(-1)">← 이전</button>':""}
        <button class="btn-primary" onclick="nav(1)">${i===total-1?"제출하기":"다음 →"}</button>
@@ -697,7 +763,7 @@ window.nav = function(d){
   saveDraft();
   const nx = S.idx + d;
   if(nx >= S.queue.length){
-    S.graded = S.queue.map((q,i)=>{ const g = itemKoEn(S.test, q) ? autoGradeEn(q.en, S.answers[i], q.ko) : autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
+    S.graded = S.queue.map((q,i)=>{ const g = q.cloze ? autoGradeCloze(q.en, S.answers[i]) : itemKoEn(S.test, q) ? autoGradeEn(q.en, S.answers[i], q.ko) : autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
     reviewScreen();
     return;
   }
@@ -708,7 +774,9 @@ window.nav = function(d){
 function reviewScreen(){
   const rows = S.graded.map((g,i)=>`
     <tr>
-      <td>${itemKoEn(S.test,g)
+      <td>${g.cloze
+            ? `<b>${esc(g.en)}</b><br><span class="small">${clozeHTML(g, {})}</span>`
+            : itemKoEn(S.test,g)
             ? `<b>${esc(S.test.eedef ? koenPrompt(S.test, g) : stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
             : `<b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span>`}</td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
