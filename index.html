@@ -80,7 +80,7 @@ const CONFIG = {
   WORD_AMNESTY_BY_ID: { "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": [17,113,160,200,201,216,220,257,323,478,555,586,639,701,716,733,768,826,842,843,1046,1390,1429,1437] },  // 단어 단위 사면: {student_id:[word_id,..]} — 지정 단어의 모든 기록을 SR 계산에서 무시(회차 무관). 무효 회차의 오답이 이후 회차 복습에 재출제돼 다시 기록된 경우 회차 단위 사면(AMNESTY)으로는 못 걷어내므로 신설. DB기록·결과지·통계 불변. 2026-08-12 황서율: 8/4은 결석일이라 그날 진단 기록 무효(AMNESTY R=8) — 그날 오답 24개가 9차(8/11) 복습에 재출제돼 17개가 다시 오답으로 남은 것까지 함께 제거 (Dean 지시). 사면 단어는 seenIds에서도 빠져 전범위 probe 후보로 자연 복귀
   RETEST_BY_ID: { "2725cb9b-9ab0-4f0c-a3c8-02da2cf06ec9": { round: 2, units: [1,2,3] },
                  "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { round: 10, units: [971], label: "수능완성 단어시험" },
-                 "c6e7859d-331c-4ac9-8866-af1c9c18c438": { round: 20, units: [991,992,993], label: "기말 특별단어시험 · 진단평가 (5·7·8과)" } },  // 2026-10-12 서승원(Dean): 20차 = 신목중 3-2 기말 족보 단어장 5과(991) 60 + 7과(992) 60 + 8과(993) 58 = 178 전수, 영→한, 복습 0. 응시 후 자동 소거. 991~993은 EXAM_UNIT_MIN 이상이라 SR/복습풀에 안 섞임  // 2026-10-05 김준엽(Dean): 10차 = 수능완성 고난도 단어장 1권(unit 971, 142단어)만 — 복습 0. 응시 후 자동 소거. 2권은 unit 972(204단어) — 칠 날 round만 맞춰 다시 지정. 971/972는 EXAM_UNIT_MIN 이상이라 능률보카 SR/복습풀에 섞이지 않음
+                 "c6e7859d-331c-4ac9-8866-af1c9c18c438": { round: 21, units: [991,992,993], fullUnits: [991], wordIds: [2479,2481,2482,2487,2493,2494,2499,2501,2502,2504,2505,2506,2508,2509,2511,2513,2514,2515,2517,2519,2523,2524,2527,2529,2530,2531,2535,2536,2540,2544,2545,2548,2550,2552,2553,2554,2555,2557,2560,2561,2562,2563,2564,2566,2567,2568,2571,2573,2576,2577,2580,2581,2582,2585,2586,2588,2589,2595,2596], label: "기말 특별단어시험 · 5과 전체 + 7·8과 진단 오답" } },  // 2026-10-16 서승원(Dean): 21차 = 기말 5과(991) 60 전부 + 20차 진단평가(88/178)의 7과·8과 오답 59(wordIds) = 119, 영→한, 복습 0. 응시 후 자동 소거. (20차 = 5·7·8과 178 전수 진단평가, 2026-10-12)  // 2026-10-05 김준엽(Dean): 10차 = 수능완성 고난도 단어장 1권(unit 971, 142단어)만 — 복습 0. 응시 후 자동 소거. 2권은 unit 972(204단어) — 칠 날 round만 맞춰 다시 지정. 971/972는 EXAM_UNIT_MIN 이상이라 능률보카 SR/복습풀에 섞이지 않음
   /* ===== 수능완성 모드 (2026-10-05, Dean — 김준엽 한정): 한 시험 상한 cap(150) =====
      복습 = 수능완성 단어(units) 중 마지막 결과가 오답인 것 전부(miss 많은 순) / 신규 = cap − 복습, 아직 안 본 단어를 단어장 순서(971→972, id순)로.
      한 번 맞히면 복습에서 빠짐. 이 모드 동안 능률보카 복습은 없음. fromRound 이상 회차에 적용.
@@ -418,7 +418,9 @@ async function buildTest(student, hist){
   if(_rt && round === _rt.round){
     const { data: _rw, error: _re } = await sb.from("words").select("id,en,ko,unit").in("unit", _rt.units);
     if(_re) err(_re);
-    const _ri = shuffle(_rw).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
+    /* fullUnits·wordIds(선택): 지정하면 fullUnits 단원은 전부 + 그 외 단원은 wordIds에 있는 단어(예: 직전 진단 오답)만 출제 */
+    const _rsel = (_rt.fullUnits || _rt.wordIds) ? (_rw||[]).filter(w => (_rt.fullUnits||[]).includes(w.unit) || (_rt.wordIds||[]).includes(w.id)) : _rw;
+    const _ri = shuffle(_rsel).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
     return { round, newUnits: _rt.units, items: _ri, review: [], retest: true, retestLabel: _rt.label || "재시험" };
   }
 
