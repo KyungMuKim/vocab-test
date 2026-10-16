@@ -85,7 +85,13 @@ const CONFIG = {
      복습 = 수능완성 단어(units) 중 마지막 결과가 오답인 것 전부(miss 많은 순) / 신규 = cap − 복습, 아직 안 본 단어를 단어장 순서(971→972, id순)로.
      한 번 맞히면 복습에서 빠짐. 이 모드 동안 능률보카 복습은 없음. fromRound 이상 회차에 적용.
      단어장 소진 + 수능완성 오답 0이면 자동으로 정규(능률보카) 모드 복귀. 일정: 11차 10/7(수)·12차 10/9(금)·13차 10/12(월). */
-  SUNEUNG_BY_ID: { "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { units: [971,972], cap: 150, fromRound: 11, label: "수능완성 단어시험" } },
+  SUNEUNG_BY_ID: {},  // 2026-10-16 김준엽 수능완성 모드 종료(Dean: 내신기간 끝, 능률보카 복귀). 이전 값 = { "8dc60c09-…": { units:[971,972], cap:150, fromRound:11 } }
+  /* ===== 복습 점검 세트(REVIEW_SET_BY_ID, 2026-10-16 Dean): 지정 회차를 신규 없이 지정 단어 복습만으로 구성. 응시하면 round가 넘어가 자동 소거 =====
+     wrongIds = 오답(item_type wrong), srIds = 주기 복습(item_type random). new_units=[]라 진도(covered) 불변 */
+  REVIEW_SET_BY_ID: { "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { round: 13, label: "능률보카 복습 점검",
+      wrongIds: [985,29,91,136,172,193,189,207,1360,197,1379,1430,243,12,376,1144,1145,810,671,1268,1396,1269],
+      srIds: [116,102,154,237,534,895,697,80,183,150,1228,1369,1001,1273,1151,768,1424,1494,1333,28,1,7,1338,76,1336,34,33,10,210,542,531,1111,371,374,1132,1125,1090,1370,742,1372,458,1371,744,1285,500,1376,991,576,1007,1064,1060,972,1272,969,919,651,578,922,1146,1198,1200,171,647,382,239] } },  // 김준엽 13차: 능률보카 복귀 첫 시험 = 오답풀 22 + 주기 도래 단어 중 한 번이라도 틀렸던 65 = 87 (Dean 선택). 14차부터 정규(신규 [28,29,30] + 복습)
+
   FORCE_UNITS_BY_ID: { "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { units: [16,17] } },  // 다음 시험 신규 단원 강제 지정: {student_id:{units:[..]}} — 복습은 정상 출제, 지정 단원 중 하나라도 covered에 들어가면(=응시 완료) 자동 소거. 2026-08-28 안성민 다음 시험 = 신규 [16,17] (Dean 지시)  // 재시험: {student_id:{round:R, units:[..]}} — 해당 학생의 R회차를 지정 단원 신규 재시험으로 대체(복습 0). 해당 회차 응시 후 자동 소거. 2026-08-06 신지환 2차=[1,2,3] 재시험(1차 [1,2] 23/49 부진, Dean 지시 — 복습풀도 AMNESTY R=2로 재초기화)
   /* ===== 시험기간 모드 (2026-09-14, Dean): 신규 = 학교 내신 단어장(THE BLUEPRINT), 복습 = 능률보카 복습풀에서 상한만 =====
      active를 false로 두거나 untilKST(KST 날짜)를 넘기면 정규 모드로 자동 복귀.
@@ -422,6 +428,17 @@ async function buildTest(student, hist){
     const _rsel = (_rt.fullUnits || _rt.wordIds) ? (_rw||[]).filter(w => (_rt.fullUnits||[]).includes(w.unit) || (_rt.wordIds||[]).includes(w.id)) : _rw;
     const _ri = shuffle(_rsel).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new" }));
     return { round, newUnits: _rt.units, items: _ri, review: [], retest: true, retestLabel: _rt.label || "재시험" };
+  }
+
+  /* ===== 복습 점검 세트(REVIEW_SET_BY_ID): 신규 없이 지정 단어만 복습으로 ===== */
+  const _rs = (CONFIG.REVIEW_SET_BY_ID||{})[student.id];
+  if(_rs && round === _rs.round){
+    const _wIds = _rs.wrongIds||[], _sIds = _rs.srIds||[];
+    const { data: _rw2, error: _re2 } = await sb.from("words").select("id,en,ko,unit").in("id", [..._wIds, ..._sIds]);
+    if(_re2) err(_re2);
+    const _wset = new Set(_wIds);
+    const _rv = shuffle((_rw2||[]).map(w=>({ word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type: _wset.has(w.id) ? "wrong" : "sr" })));
+    return { round, newUnits: [], items: [], review: _rv, retest: true, retestLabel: _rs.label || "복습 점검" };
   }
 
   /* ===== 수능완성 모드(SUNEUNG_BY_ID): 복습(수능완성 오답 전부) + 신규(cap − 복습, 단어장 순서) — 능률보카 복습 없음 ===== */
