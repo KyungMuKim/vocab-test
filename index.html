@@ -41,6 +41,17 @@
   select{font-size:1rem; padding:10px; border:2px solid var(--line); border-radius:10px; background:#fff;}
   .flag{background:#f0fdf4; color:#166534; font-size:.82rem; border-radius:8px; padding:8px 10px; margin:8px 0;}
   .flag.amber{background:#fffbeb; color:#92400e;}
+  .skipchip{display:block; width:100%; text-align:left; background:#fef2f2; color:#b91c1c; border:1.5px dashed #fca5a5; border-radius:10px; padding:10px 12px; font-size:.9rem; margin:10px 0 0; cursor:pointer;}
+  .fixbar{background:#fff7ed; color:#9a3412; border-radius:10px; padding:10px 12px; font-size:.9rem; margin:10px 0 0; line-height:1.5;}
+  .gridbox{margin-top:16px; border-top:1px solid var(--line); padding-top:10px;}
+  .gridbox summary{cursor:pointer; color:var(--sub); font-size:.85rem; font-weight:600;}
+  .qgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(40px,1fr)); gap:6px; margin-top:10px;}
+  .qgrid button{height:38px; border-radius:8px; border:1.5px solid var(--line); background:#fff; color:var(--sub); font-size:.85rem; font-weight:700; cursor:pointer;}
+  .qgrid button.done{background:#e0e7ff; border-color:#e0e7ff; color:#3730a3;}
+  .qgrid button.skip{background:#fef2f2; border:1.5px dashed #ef4444; color:#b91c1c;}
+  .qgrid button.cur{background:var(--ink); border-color:var(--ink); color:#fff;}
+  .lg{display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-1px; margin:0 3px 0 8px; border:1.5px solid var(--line);}
+  .lg.done{background:#e0e7ff; border-color:#e0e7ff;} .lg.skip{background:#fef2f2; border:1.5px dashed #ef4444;} .lg.cur{background:var(--ink); border-color:var(--ink);}
   .statbox{background:#f7f9ff; border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:10px 0; font-size:.9rem; line-height:1.7;}
   .statbox b{color:var(--ink);}
   .live{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:6px; animation:pulse 1.5s infinite;}
@@ -302,7 +313,7 @@ function saveDraft(){
   try{ localStorage.setItem(draftKey(S.student.id), JSON.stringify({
     round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag, diagPlus:!!S.test.diagPlus,
   koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew, eedef:!!S.test.eedef,
-    queue:S.queue, answers:S.answers, idx:S.idx, ts:Date.now(), name:S.student.name
+    queue:S.queue, answers:S.answers, idx:S.idx, maxIdx:S.maxIdx||0, ts:Date.now(), name:S.student.name
   })); }catch(e){}
 }
 function loadDraft(id){ try{ const r=localStorage.getItem(draftKey(id)); return r?JSON.parse(r):null; }catch(e){ return null; } }
@@ -697,7 +708,8 @@ window.proceedStudent = async function(student, resume){
         test:{ round:d.round, newUnits:d.newUnits, diag:d.diag, diagPlus:d.diagPlus,
               koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew, eedef:!!fl.eedef,
                 items:d.queue.filter(q=>q.type==="new"), review:d.queue.filter(q=>q.type!=="new") },
-        queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0 };
+        queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0,
+        maxIdx:Math.max(d.maxIdx||0, d.idx||0, ...(d.answers||[]).map((a,j)=>String(a||"").trim()?j:0)) };
       question();
       return;
     }
@@ -751,70 +763,128 @@ window.proceedStudent = async function(student, resume){
 window.startTest = function(){
   S.queue = [...S.test.items, ...S.test.review];
   S.answers = new Array(S.queue.length).fill("");
-  S.idx = 0;
+  S.idx = 0; S.maxIdx = 0; S.fixMode = false; S.gridOpen = false;
   saveDraft();
   question();
 };
+/* ===== 문항 화면 — 빈칸 관리(건너뛴 문항 표시·빈칸만 이어 풀기·번호판) ===== */
+const isBlank = j => !String(S.answers[j]||"").trim();
+/* 건너뛴 문항 = 이미 지나온 위치(maxIdx 이전)인데 답이 비어 있는 문항 */
+function skippedList(){ const out=[]; for(let j=0;j<S.queue.length;j++){ if(j<S.maxIdx && isBlank(j)) out.push(j); } return out; }
+function allBlanks(){ const out=[]; for(let j=0;j<S.queue.length;j++){ if(isBlank(j)) out.push(j); } return out; }
+function storeCur(){ const el=document.getElementById("ans"); if(el){ S.answers[S.idx]=el.value; } }
+function gridHTML(){
+  return `<div class="qgrid">${S.queue.map((_,j)=>{
+    const cls = j===S.idx ? "cur" : !isBlank(j) ? "done" : j<S.maxIdx ? "skip" : "";
+    return `<button class="${cls}" onclick="jumpTo(${j})">${j+1}</button>`; }).join("")}</div>
+    <div class="small" style="margin-top:6px"><span class="lg done"></span>답함 <span class="lg skip"></span>빈칸(건너뜀) <span class="lg cur"></span>지금 문항</div>`;
+}
 function question(){
+  if(S.maxIdx === undefined) S.maxIdx = 0;
+  S.maxIdx = Math.max(S.maxIdx, S.idx);
   const i = S.idx, q = S.queue[i], total = S.queue.length;
   const koen = itemKoEn(S.test, q);
   const badge = q.type==="new" ? (S.test.diag?'<span class="badge b-diag">진단</span>':'<span class="badge b-new">신규</span>')
     : q.type==="wrong" ? '<span class="badge b-wrong">복습·오답</span>'
     : q.type==="sr" ? '<span class="badge b-random">복습·주기</span>'
     : S.test.diagPlus ? '<span class="badge b-diag">진단</span>' : '<span class="badge b-random">복습·랜덤</span>';
+  const sk = skippedList().filter(j=>j!==i);
+  const isLast = i===total-1;
+  const done = S.answers.filter((_,j)=>!isBlank(j)).length;
+  let bar = "";
+  if(S.fixMode){
+    bar = `<div class="fixbar">✏️ <b>빈칸 채우는 중</b> · 남은 빈칸 <b>${sk.length + (isBlank(i)?1:0)}</b>개<br><span class="small" style="color:inherit">답을 쓰고 Enter(다음)를 누르면 <b>다음 빈칸</b>으로 바로 가요.</span>
+      <div class="row" style="margin-top:6px"><button class="btn-ghost btn-sm" onclick="endFix()">그만하고 원래 풀던 곳으로 →</button></div></div>`;
+  } else if(sk.length){
+    bar = `<button class="skipchip" onclick="startFix()">⬜ 건너뛴 문항 <b>${sk.length}</b>개 — 눌러서 빈칸만 이어 풀기</button>`;
+  }
   app.innerHTML = `
    <div class="card">
-     <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · ${i+1} / ${total}</div>
-     <div class="progress"><div style="width:${(i/total*100).toFixed(1)}%"></div></div>
+     <div class="small">${esc(S.student.name)} · ${roundLabel(S.test)} · <b>${i+1}</b> / ${total} <span style="float:right">답한 문항 ${done}/${total}</span></div>
+     <div class="progress"><div style="width:${(done/total*100).toFixed(1)}%"></div></div>
+     ${bar}
      ${q.cloze ? `<div class="word" style="font-size:19px;line-height:1.7;font-weight:500">${clozeHTML(q, Object.fromEntries(S.queue.map((x,j)=>[j,x]).filter(([j,x])=>x.cloze && x.cloze.k===q.cloze.k && j!==i && S.answers[j]).map(([j,x])=>[x.cloze.b, S.answers[j]])))}</div><div class="small" style="margin:-4px 0 8px">${q.cloze.n>1 ? "<b>"+["","①","②","③"][q.cloze.b]+"번</b> 빈칸에 들어갈 영어 단어를 쓰세요." : "빈칸에 들어갈 영어 단어를 쓰세요."}</div>`
      : `<div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}</div>`}
      ${koen ? `<div class="small" style="margin:-4px 0 8px">첫 글자 힌트 &nbsp;<b style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;letter-spacing:2px">${esc(enHint(q.en, S.test.koenHint||1))}</b></div>` : ""}
      <input type="text" id="ans" placeholder="${(koen || q.cloze) ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
+     <div id="lastNote"></div>
      <div class="row">
        ${i>0?'<button class="btn-ghost" onclick="nav(-1)">← 이전</button>':""}
-       <button class="btn-primary" onclick="nav(1)">${i===total-1?"제출하기":"다음 →"}</button>
+       ${isLast
+         ? '<button class="btn-primary" id="submitBtn" style="background:var(--ok)" onclick="trySubmit()">제출하기 ✓</button>'
+         : `<button class="btn-primary" onclick="nav(1)">${S.fixMode?"다음 빈칸 →":"다음 →"}</button>`}
      </div>
+     ${!isLast && S.maxIdx>=total-1 && !S.fixMode ? '<div class="row"><button class="btn-ghost btn-sm" onclick="jumpTo('+(total-1)+')">마지막 문항(제출)으로 →</button></div>' : ""}
+     <details class="gridbox"${S.gridOpen?" open":""} ontoggle="S.gridOpen=this.open"><summary>전체 문항 번호판 (눌러서 이동)</summary>${gridHTML()}</details>
    </div>`;
   const inp = document.getElementById("ans");
   inp.focus();
-  inp.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.isComposing && e.keyCode!==229) nav(1); });
+  inp.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.isComposing && e.keyCode!==229){ e.preventDefault(); nav(1); } });
 }
+window.jumpTo = function(j){ storeCur(); S.idx = j; saveDraft(); question(); };
+window.startFix = function(){ storeCur(); const sk = skippedList(); if(!sk.length) return question(); S.fixMode = true; S.idx = sk[0]; saveDraft(); question(); };
+window.endFix = function(){ storeCur(); S.fixMode = false; S.idx = S.maxIdx; saveDraft(); question(); };
 window.nav = function(d){
-  S.answers[S.idx] = document.getElementById("ans").value;
+  storeCur();
   saveDraft();
-  const nx = S.idx + d;
-  if(nx >= S.queue.length){
-    S.graded = S.queue.map((q,i)=>{ const g = q.cloze ? autoGradeCloze(q.en, S.answers[i]) : itemKoEn(S.test, q) ? autoGradeEn(q.en, S.answers[i], q.ko) : autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
-    reviewScreen();
+  const total = S.queue.length;
+  if(d > 0 && S.fixMode){
+    /* 빈칸 모드: 현재 위치 다음의 빈칸 → 없으면 앞쪽 빈칸 → 다 채웠으면 원래 풀던 곳으로 */
+    const sk = (S.maxIdx>=total-1 ? allBlanks() : skippedList()).filter(j=>j!==S.idx);
+    const nxt = sk.find(j=>j>S.idx) ?? sk[0];
+    if(nxt === undefined){ S.fixMode = false; S.idx = S.maxIdx; }
+    else S.idx = nxt;
+    saveDraft(); question(); return;
+  }
+  if(d > 0 && S.idx >= total-1){
+    /* 마지막 문항: 자동 제출하지 않고 제출 버튼 안내만 */
+    const inp = document.getElementById("ans"); if(inp) inp.blur();
+    const note = document.getElementById("lastNote");
+    if(note) note.innerHTML = `<div class="flag amber">마지막 문제예요. 다 풀었으면 아래 <b>제출하기</b>를 눌러 주세요.</div>`;
+    const b = document.getElementById("submitBtn"); if(b) b.scrollIntoView({block:"center", behavior:"smooth"});
     return;
   }
-  S.idx = Math.max(0,nx);
+  S.idx = Math.max(0, Math.min(total-1, S.idx + d));
   saveDraft();
   question();
 };
-function reviewScreen(){
-  const rows = S.graded.map((g,i)=>`
+/* 제출 버튼: 빈칸이 있으면 한 번 알려 주고, 없으면 바로 저장 */
+window.trySubmit = function(){
+  storeCur(); saveDraft();
+  S.maxIdx = S.queue.length-1;
+  const bl = allBlanks();
+  if(!bl.length) return finalSubmit();
+  const chips = bl.map(j=>`<button onclick="S.fixMode=true;jumpTo(${j})">${j+1}</button>`).join("");
+  app.innerHTML = `
+   <div class="card">
+     <h2>잠깐! 빈칸이 ${bl.length}개 있어요 ✋</h2>
+     <div class="sub">아래 번호를 누르면 그 문항으로 가요. '빈칸 채우러 가기'를 누르면 빈칸만 차례로 보여 줘요.</div>
+     <div class="qgrid">${chips.replace(/<button /g,'<button class="skip" ')}</div>
+     <button class="btn-primary" style="margin-top:14px" onclick="startFixAll()">빈칸 채우러 가기 (${bl.length}개)</button>
+     <div class="row"><button class="btn-ghost" style="flex:1" onclick="finalSubmit()">빈칸 그대로 제출하기</button></div>
+   </div>`;
+};
+window.startFixAll = function(){ const bl = allBlanks(); if(!bl.length) return finalSubmit(); S.fixMode = true; S.idx = bl[0]; saveDraft(); question(); };
+window.finalSubmit = function(){
+  S.fixMode = false;
+  S.graded = S.queue.map((q,i)=>{ const g = q.cloze ? autoGradeCloze(q.en, S.answers[i]) : itemKoEn(S.test, q) ? autoGradeEn(q.en, S.answers[i], q.ko) : autoGrade(q.ko, S.answers[i]); return { ...q, answer:S.answers[i], correct:g.correct, review:g.review }; });
+  submitResult();
+};
+window.backToTest = function(){ S.idx = S.queue.length-1; question(); };
+/* 저장 후 결과 확인(읽기 전용) */
+function resultTable(){
+  return S.graded.map((g,i)=>`
     <tr>
+      <td class="small">${i+1}</td>
       <td>${g.cloze
             ? `<b>${esc(g.en)}</b><br><span class="small">${clozeHTML(g, {})}</span>`
             : itemKoEn(S.test,g)
             ? `<b>${esc(S.test.eedef ? koenPrompt(S.test, g) : stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
             : `<b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span>`}</td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
-      <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="감수 대상">⚠️</span>':''}</td>
-      <td><button class="btn-ghost btn-sm" onclick="flip(${i})">수정</button></td>
+      <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="선생님 확인 예정">⚠️</span>':''}</td>
     </tr>`).join("");
-  const c = S.graded.filter(g=>g.correct).length;
-  app.innerHTML = `
-   <div class="card">
-     <h2>채점 확인 ✍️</h2>
-     <div class="sub">자동 채점 결과예요. 유사 답은 '수정'으로 뒤집을 수 있어요. (저장 후에도 선생님이 수정 가능)</div>
-     <div class="score-big">${c} / ${S.graded.length}</div>
-     <table><tr><th>단어 / 정답</th><th>내 답</th><th>채점</th><th></th></tr>${rows}</table>
-     <button class="btn-primary" style="margin-top:14px" onclick="submitResult()">결과 저장</button>
-   </div>`;
 }
-window.flip = function(i){ S.graded[i].correct = !S.graded[i].correct; S.graded[i].review = false; reviewScreen(); };
 
 /* ===== 보충시험 저장: 기존 회차 attempt에 신규 문항 병합(멱등) ===== */
 async function submitSupplement(){
@@ -898,13 +968,15 @@ window.submitResult = async function(){
     const nt = S.graded.filter(g=>g.type==="new").length;
     const rc = S.graded.filter(g=>g.type!=="new").filter(g=>g.correct).length;
     const rt = S.graded.filter(g=>g.type!=="new").length;
+    const anyRev = S.graded.some(g=>g.review);
     app.innerHTML = `
      <div class="card">
-       <h2>저장 완료 ✅</h2>
+       <h2>제출 완료 ✅</h2>
        <div class="score-big">${nc} / ${nt} <span class="small">${newLabel(S.test)}</span>
          ${rt? `&nbsp; ${rc} / ${rt} <span class="small">복습</span>`:""}</div>
-       <div class="pill">틀린 단어는 다음 복습 시험에 다시 나와요 💪</div>
-       <button class="btn-primary" onclick="home()">처음으로</button>
+       <div class="pill">틀린 단어는 다음 복습 시험에 다시 나와요 💪${anyRev?'<br><span class="small">⚠️ 표시는 선생님이 한 번 더 확인할 답이에요. 맞는 답이면 나중에 점수가 올라가요.</span>':''}</div>
+       <table><tr><th>#</th><th>단어 / 정답</th><th>내 답</th><th>채점</th></tr>${resultTable()}</table>
+       <button class="btn-primary" style="margin-top:14px" onclick="home()">처음으로</button>
      </div>`;
   }catch(e){
     S.submitting = false;
@@ -914,7 +986,7 @@ window.submitResult = async function(){
        <div class="pill">네트워크 문제로 저장하지 못했어요. <b>답안은 그대로 남아있으니</b> 아래 버튼으로 다시 시도하세요.</div>
        <div class="small" style="margin:8px 0">${esc(e.message||String(e))}</div>
        <button class="btn-primary" onclick="submitResult()">다시 저장</button>
-       <div class="row"><button class="btn-ghost btn-sm" onclick="reviewScreen()">← 채점 화면으로</button></div>
+       <div class="row"><button class="btn-ghost btn-sm" onclick="backToTest()">← 문제로 돌아가기</button></div>
      </div>`;
   }
 };
