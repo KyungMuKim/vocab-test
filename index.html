@@ -335,6 +335,9 @@ async function loadHistory(studentId){
     }
   }
   const roundOf = Object.fromEntries(attempts.map(a=>[a.id, a.round]));
+  /* 2026-10-18 catch-up fix: diag(round 0) is treated as (first regular round - 1) for SR intervals, so a mid-join student's known words are not all due at the 2nd test (minjeong r26 SR16). Normal flow 0->1 unchanged. */
+  const _minReg = Math.min(...attempts.filter(a=>a.round>0).map(a=>a.round));
+  const effRoundOf = Object.fromEntries(attempts.map(a=>[a.id, (a.round===0 && isFinite(_minReg)) ? _minReg-1 : a.round]));
   /* 순수 진단고사 attempt(신규 단원 없음) 여부 — 진단+신규 동시 응시(DIAG_PLUS)의 신규 파트를 '원래 알던 단어'로 오인하지 않도록 */
   const pureDiag = Object.fromEntries(attempts.map(a=>[a.id, ((a.new_units||[]).length === 0)]));
   /* 사면(clean slate): AMNESTY_BY_ID[student_id]=R → R회차 이전 기록을 SR 계산에서만 무시(단 R회차 신규 파트는 유지). 기록/결과지/통계는 그대로 (2026-07-27) */
@@ -360,7 +363,7 @@ async function loadHistory(studentId){
     /* 원래 알던 단어: 첫 노출(진단 or 전범위 probe)에서 바로 정답 → KNOWN_INTERVAL(3개월) 적용 */
     st.known = (st.n === 0 && it.correct && ((roundOf[it.attempt_id] === 0 && pureDiag[it.attempt_id]) || it.item_type === "random"));
     st.n++;
-    st.lastRound = roundOf[it.attempt_id];
+    st.lastRound = effRoundOf[it.attempt_id];
     if(it.correct) st.streak++;
     else { st.streak = 0; st.miss++; }
   });
