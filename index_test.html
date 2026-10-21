@@ -1469,7 +1469,14 @@ window.openStudy = async function(studentId, src){
     else if(!Object.keys(cnt).length) cat = "blank";
     else cat = "other";
     const meaning = d ? d.m : (koById[t.word_id] || []).join(", ");
-    const ruleAns = (meaning.split(/[,;]/)[0] || "").trim();
+    /* 규칙 문장용 뜻: 뜻풀이 조각 중 가장 짧은 것(괄호 설명 제거) — 어느 조각이든 채점은 정답 */
+    const _pieces = meaning.split(/[,;]/).map(x => x.replace(/\([^)]*\)/g,"").replace(/\[[^\]]*\]/g,"").trim()).filter(x => x.length >= 1 && !/[…~]/.test(x) && !/나타내는/.test(x));
+    let ruleAns = "";
+    if(d && d.c){   /* 단서 끝 '→ 뜻' = 예문에서 쓰인 뜻 — 교재 뜻풀이에 실제로 있으면 그걸 규칙 답으로 */
+      const _seg = d.c.split("→").pop().split(/[.(]/)[0].split(/[,;]/)[0].replace(/['‘’"“”]/g,"").trim();
+      if(_seg && meaning.replace(/\s/g,"").includes(_seg.replace(/\s/g,""))) ruleAns = _seg;
+    }
+    if(!ruleAns) ruleAns = (_pieces.sort((x,y) => x.length - y.length)[0] || meaning.split(/[,;]/)[0] || "").trim();
     const miss = h.filter(x => !x.ok).length;
     return { ...t, h, d, top, cat, meaning, ruleAns, miss, ko: koById[t.word_id] || [] };
   });
