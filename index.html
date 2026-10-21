@@ -1509,7 +1509,7 @@ window.openStudy = async function(studentId, src){
   const SEC = {
     stuck: ["🔴 안다고 믿는 단어", "같은 오답을 두 번 이상 쓴 단어예요. 이런 단어는 새로 외우기보다 <b>틀린 답을 먼저 지워야</b> 해요. 단어를 보면 떠오르는 그 뜻을 쓰지 말고, 펼쳐서 나오는 <b>규칙</b>대로 쓰세요."],
     flip:  ["🟠 맞혔다가 다시 틀린 단어", "한 번은 맞혔던 단어예요. 몰라서가 아니라 흔들린 거예요. 예문으로 다시 붙잡아요."],
-    blank: ["⚪ 아직 한 번도 답을 못 쓴 단어", "머릿속에 아직 자리가 없는 단어예요. <b>어원</b>을 먼저 보면 뜻이 만들어지는 원리가 보여요."],
+    blank: ["⚪ 아직 한 번도 답을 못 쓴 단어", "머릿속에 아직 자리가 없는 단어예요. 예문으로 먼저 추론해 보고, 펼친 뒤에는 <b>어근·어원</b>까지 꼭 읽어서 뜻이 만들어지는 원리를 잡아요."],
     other: ["🔵 그 밖의 틀린 단어", "예문을 읽고 뜻을 먼저 추론해 본 뒤 펼쳐 보세요."],
     sr:    ["🟢 주기 복습 단어", "예전에 맞혔지만 잊어버릴 때가 돼서 다시 나오는 단어예요. 가볍게 확인해요."]
   };
@@ -1525,17 +1525,18 @@ window.openStudy = async function(studentId, src){
     const d = c.d;
     const rm = d ? studyRootMeaning(SD, c.unit, d.g) : "";
     html += `<div class="sc cat-${c.cat}${SL.done.has(k)?" sdone":""}" id="sc${i}" data-k="${esc(k)}">
-      <div class="sch"><span class="sw">${esc(c.en)}</span><span class="small">${c.unit}단원</span>${d&&d.g?`<span class="sg">${esc(d.g)}${rm?" · "+esc(rm):""}</span>`:""}
+      <div class="sch"><span class="sw">${esc(c.en)}</span><span class="small">${c.unit}단원</span>
         <button class="sdb" onclick="studyDone(${i})">${SL.done.has(k)?"↩︎ 다시 보기":"✓ 이제 알아요"}</button></div>
       <div class="sbody">
       <div class="shist">${histHTML(c.h)}</div>
       ${c.cat==="stuck"?`<div class="sstuck">❌ 내가 <b>${c.top.n}번</b> 쓴 답 <b>‘${esc(c.top.a)}’</b> — 이 뜻이 아니에요!</div>`:""}
       ${d&&d.s?`<div class="sex">${d.s}</div>`:""}
       <input type="text" class="sgin" id="sg${i}" placeholder="${d&&d.s?"예문을 보고 뜻을 추론해 써 보세요":"뜻을 떠올려 써 보세요"}" autocomplete="off">
-      <details id="sd${i}" ontoggle="studyRev(${i})"><summary>🔍 정답 · 어원 · 연상 보기</summary>
+      <details id="sd${i}" ontoggle="studyRev(${i})"><summary>🔍 추론했으면 눌러서 확인 — 뜻 · 어근 · 연상</summary>
         <div id="sv${i}"></div>
         <div class="smean">${esc(c.meaning)}</div>
         ${d&&d.c?`<div class="sclue">💡 ${esc(d.c)}</div>`:""}
+        ${d&&d.g?`<div class="srow"><span class="slab">어근</span><span><span class="sg">${esc(d.g)}</span>${rm?" "+esc(rm):""}</span></div>`:""}
         ${d&&d.e?`<div class="srow"><span class="slab">어원</span><span>${esc(d.e)}</span></div>`:""}
         ${d&&d.n?`<div class="srow"><span class="slab">연상</span><span>${esc(d.n)}</span></div>`:""}
         ${c.cat==="stuck"?`<div class="srule">📌 <b>규칙</b> — 시험지에서 <b>${esc(c.en)}</b>를 보면 ‘${esc(c.top.a)}’가 떠올라도 쓰지 말고 무조건 <b>‘${esc(c.ruleAns)}’</b>라고 쓰세요. 지금 소리 내어 세 번 읽어요.</div>`:""}
@@ -1552,12 +1553,12 @@ window.openStudy = async function(studentId, src){
     <div class="card">
       <h1>📖 ${esc(st.name)} · 복습 공부</h1>
       <div class="pill">${head}</div>
-      <div class="small" style="line-height:1.7">공부 순서: ① 예문을 읽고 뜻을 <b>추론해서 써 보기</b> → ② 펼쳐서 정답·어원·연상 확인 → ③ 알게 된 단어는 <b>✓ 이제 알아요</b>를 눌러 접어 두기</div>
+      <div class="small" style="line-height:1.7">공부 순서: ① 힌트 없이 <b>예문만 읽고</b> 뜻을 <b>추론해서 써 보기</b> → ② 눌러서 뜻·어근·연상 확인 → ③ 알게 된 단어는 <b>✓ 이제 알아요</b>를 눌러 접어 두기</div>
       <div class="progress" style="margin-top:12px"><div id="sprog" style="width:0%"></div></div>
       <div class="small" id="sprogt"></div>
-      ${famList.length?`<div class="sfam"><b>🌱 어근으로 묶어 보기</b><br>${famList.map(f=>`<span class="sfc"><b>${esc(f.g)}</b>${f.mean?" ("+esc(f.mean)+")":""} — ${f.ws.map(esc).join(" · ")}</span>`).join("")}</div>`:""}
     </div>
     ${html}
+    ${famList.length?`<div class="card"><details class="sfam" style="margin:0"><summary style="cursor:pointer"><b>🌱 다 풀었으면 — 어근으로 묶어 보기</b></summary><div style="margin-top:6px">${famList.map(f=>`<span class="sfc"><b>${esc(f.g)}</b>${f.mean?" ("+esc(f.mean)+")":""} — ${f.ws.map(esc).join(" · ")}</span>`).join("")}</div></details></div>`:""}
     <div class="card"><button class="btn-primary" onclick="studyHome()">처음 화면으로</button></div>`;
   studyProg();
 };
