@@ -1470,11 +1470,19 @@ window.openStudy = async function(studentId, src){
     else cat = "other";
     const meaning = d ? d.m : (koById[t.word_id] || []).join(", ");
     /* 규칙 문장용 뜻: 뜻풀이 조각 중 가장 짧은 것(괄호 설명 제거) — 어느 조각이든 채점은 정답 */
-    const _pieces = meaning.split(/[,;]/).map(x => x.replace(/\([^)]*\)/g,"").replace(/\[[^\]]*\]/g,"").trim()).filter(x => x.length >= 1 && !/[…~]/.test(x) && !/나타내는/.test(x));
+    const _mR = meaning.replace(/\s*\(※[^)]*\)?/g, "");   /* (※파생어 메모) 제외 */
+    const _pieces = _mR.split(/[,;]/).map(x => x.replace(/\([^)]*\)/g,"").replace(/\[[^\]]*\]/g,"").trim()).filter(x => x.length >= 1 && !/[…~]/.test(x) && !/나타내는/.test(x));
     let ruleAns = "";
     if(d && d.c){   /* 단서 끝 '→ 뜻' = 예문에서 쓰인 뜻 — 교재 뜻풀이에 실제로 있으면 그걸 규칙 답으로 */
       const _seg = d.c.split("→").pop().split(/\.\s|\.$/)[0].replace(/\([^)]*\)/g,"").split(/[,;]/)[0].replace(/['‘’"“”]/g,"").trim();
-      if(_seg && meaning.replace(/[()\s]/g,"").includes(_seg.replace(/\s/g,""))) ruleAns = _seg;
+      const _sn = _seg.replace(/\s/g,"");
+      if(_sn){   /* 교재 뜻풀이 조각과 대조 — 조각 끝까지 일치하면 그대로, 조각 일부(명사형 '지정' ⊂ '지정하다')면 품사가 맞도록 조각 전체를 씀 */
+        for(const _ch of _mR.split(/[,;]/)){
+          const _k = _ch.replace(/[()\s]/g,"");
+          if(_k === _sn || _k.endsWith(_sn)){ ruleAns = _seg; break; }
+          if(_k.includes(_sn) && !ruleAns) ruleAns = _ch.replace(/\([^)]*\)/g,"").replace(/\[[^\]]*\]/g,"").trim();
+        }
+      }
     }
     if(!ruleAns) ruleAns = (_pieces.sort((x,y) => x.length - y.length)[0] || meaning.split(/[,;]/)[0] || "").trim();
     const miss = h.filter(x => !x.ok).length;
