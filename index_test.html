@@ -1478,7 +1478,7 @@ window.openStudy = async function(studentId, src){
       const _sn = _seg.replace(/\s/g,"");
       if(_sn){   /* 교재 뜻풀이 조각과 대조 — 조각 끝까지 일치하면 그대로, 조각 일부(명사형 '지정' ⊂ '지정하다')면 품사가 맞도록 조각 전체를 씀 */
         for(const _ch of _mR.split(/[,;]/)){
-          const _k = _ch.replace(/[()\s]/g,"");
+          const _k = _ch.replace(/\[[^\]]*\]/g,"").replace(/[()\s]/g,"");
           if(_k === _sn || _k.endsWith(_sn)){ ruleAns = _seg; break; }
           if(_k.includes(_sn) && !ruleAns) ruleAns = _ch.replace(/\([^)]*\)/g,"").replace(/\[[^\]]*\]/g,"").trim();
         }
