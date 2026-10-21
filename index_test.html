@@ -221,6 +221,15 @@ function meaningTokens(koArr){
       [n1,n2].forEach(n => { if(n){ t.add(n); const st = stem(n); if(st!==n) t.add(st); } });
     });
   }));
+  /* 괄호 품사 표시 (2026-10-22, apart 이의제기): 교재가 '따로따로(인)'처럼 (인)/(의)를 붙여 형용사 용법을 병기했으면
+     같은 표제어의 부사 뜻도 형용사형으로 인정 — 떨어져(서)→떨어진·떨어져 있는, 별개로→별개인·별개의 */
+  if(koArr.some(m => /\((인|의)\)/.test(m))){
+    [...t].forEach(x => {
+      let m;
+      if((m = x.match(/^(.+)져서?$/))){ t.add(m[1]+"진"); t.add(m[1]+"져있는"); }
+      if((m = x.match(/^(.+[^으])로$/)) && m[1].length >= 2){ t.add(m[1]+"인"); t.add(m[1]+"의"); }
+    });
+  }
   return t;
 }
 function matchToken(a, toks){ // "exact" | "fuzzy" | false
