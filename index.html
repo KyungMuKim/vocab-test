@@ -97,6 +97,7 @@ const CONFIG = {
   SR_CAP: 20,                       // 회차당 SR(주기 복습) 최대 문항 수 — 취약 단어 우선
   REVIEW_MIN: 20,                   // 복습 섹션 최소 문항 수 (부족분은 전범위 probe로 충전)
   REVIEW_MAX: 60,                   // 복습 섹션 최대 문항 수 (오답+SR+probe 합산 상한)
+  RANDOM_MIN: 10,                   // 복습 중 오답 외(SR 주기복습+전범위 probe) 최소 보장 문항 수 (2026-10-26 Dean) — 오답풀이 상한에 닿아도 옛 단원 점검이 0이 되지 않게
   DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
   SR_INTERVALS: [1,4,8,16],         // streak별 재출제 간격(회차): 오답 다음 시험, 첫 정답 4(2주), 2연속 8(4주), 3연속+ 16(8주)
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
@@ -624,8 +625,9 @@ async function buildTest(student, hist){
   const due = hist.srPool.filter(w => !newIdSet.has(w.word_id) && (round - w.lastRound) >= iv(w));
 
   /* 오답: 전부 출제 (REVIEW_MAX 한도 내) */
+  const _randRes = isPostDiag ? 0 : Math.min(CONFIG.RANDOM_MIN || 0, revMax);  // 오답 외 예약석(2026-10-26 랜덤 소멸 수정)
   const wrongs = due.filter(w=>w.streak===0).sort((a,b)=>b.miss-a.miss)
-    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : revMax);
+    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : revMax - _randRes);  // 남는 오답(miss 적은 순)은 다음 회차로 이월
   /* SR: 취약 단어 우선(낮은 streak, miss 많은 순, 연체 큰 순), 상한 SR_CAP */
   const srs = isPostDiag ? [] :
     due.filter(w=>w.streak>0)
@@ -635,7 +637,8 @@ async function buildTest(student, hist){
 
   /* REVIEW_MIN까지 전범위 probe(한 번도 안 나온 단어)로 충전 — 첫 노출 정답이면 '원래 알던 단어'(3개월 뒤) */
   let randIds = [];
-  const needFill = Math.min(CONFIG.REVIEW_MIN, revMax) - (wrongs.length + srs.length);
+  const needFill = Math.min(revMax - (wrongs.length + srs.length),
+                            Math.max(Math.min(CONFIG.REVIEW_MIN, revMax) - (wrongs.length + srs.length), _randRes - srs.length));  // SR이 예약석을 다 못 채우면 probe로 충전
   if(!isPostDiag && needFill > 0){
     const allW = await selAll(() => sb.from("words").select("id").gte("unit", _uLo).lte("unit", _uHi).order("id"));  // 1000행 제한 회피(2026-10-21): 이전엔 1474단어 중 1000개만 랜덤 후보였음
     const seen = new Set(hist.seenIds);
