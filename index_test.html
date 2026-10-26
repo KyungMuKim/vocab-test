@@ -76,6 +76,9 @@
   .srow{display:flex; gap:8px; font-size:.88rem; line-height:1.55; margin:5px 0;} .slab{flex:none; background:#eef2ff; color:#3730a3; font-weight:700; font-size:.72rem; border-radius:6px; padding:2px 6px; height:fit-content;}
   .srule{background:#fff7ed; border:1.5px solid #fdba74; color:#9a3412; border-radius:10px; padding:9px 11px; font-size:.9rem; margin-top:8px; line-height:1.55;}
   .sverd{font-size:.88rem; border-radius:8px; padding:6px 10px; background:#f1f5f9; margin:6px 0;} .sverd.ok{background:#f0fdf4;} .sverd.no{background:#fef2f2;}
+  .stabs{display:flex; gap:6px; margin:10px 0 4px;} .stab{flex:1; text-align:center; padding:9px; border-radius:10px; background:#eef1f8; font-weight:700; font-size:.9rem; cursor:pointer; border:none; color:var(--ink);} .stab.on{background:#4f46e5; color:#fff;}
+  .stime{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; background:#f0f9ff; border-radius:10px; padding:8px 12px; margin:10px 0 2px; font-size:.88rem; color:#0c4a6e;} .stime b{font-size:1.05rem;} .stime .spause{color:#b45309; font-weight:700;}
+  .sc.cat-new{border-left-color:#7c3aed;}
   .sfam{background:#faf5ff; border-radius:10px; padding:10px 12px; margin-top:12px; font-size:.86rem; line-height:1.7;} .sfc{display:block;}
 </style>
 </head>
@@ -121,7 +124,10 @@ const CONFIG = {
   SUNEUNG_BY_ID: {},  // 2026-10-16 김준엽 수능완성 모드 종료(Dean: 내신기간 끝, 능률보카 복귀). 이전 값 = { "8dc60c09-…": { units:[971,972], cap:150, fromRound:11 } }
   /* ===== 복습 점검 세트(REVIEW_SET_BY_ID, 2026-10-16 Dean): 지정 회차를 신규 없이 지정 단어 복습만으로 구성. 응시하면 round가 넘어가 자동 소거 =====
      wrongIds = 오답(item_type wrong), srIds = 주기 복습(item_type random). new_units=[]라 진도(covered) 불변 */
-  REVIEW_SET_BY_ID: { "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { round: 13, label: "능률보카 복습 점검",
+  REVIEW_SET_BY_ID: { "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { round: 14, label: "능률보카 복습 점검",
+      wrongIds: [161,70,71,1361,208,989,1281,1277,1266,104,109,1007,1060,1379,1000,1066,1063,1064],
+      srIds: [60,56,31,133,114,125,116,117,129,120,115,111,122,123,124,127,113,131,130,132,121,118,191,194,193,174,177,172,134,140,169,173,189,158,1358,195,190,164,135,170,1359,139,142,157,162,196] },  // 안성민 14차(2026-10-25 일, Dean 2026-10-23): 워드마스터 뒤 능률보카 복귀 첫 시험 = 신규 없이 누적 복습만 64 — 오답풀 18 전부 + SR 도래 187 중 우선순위(streak 낮고 miss 많고 연체 큰 순) 46. 응시하면 자동 소거, 15차(10/30 금)부터 정규(신규 [20,21]+복습)
+                      "8dc60c09-9e51-4be9-afec-f7067a58c3aa": { round: 13, label: "능률보카 복습 점검",
       wrongIds: [985,29,91,136,172,193,189,207,1360,197,1379,1430,243,12,376,1144,1145,810,671,1268,1396,1269],
       srIds: [116,102,154,237,534,895,697,80,183,150,1228,1369,1001,1273,1151,768,1424,1494,1333,28,1,7,1338,76,1336,34,33,10,210,542,531,1111,371,374,1132,1125,1090,1370,742,1372,458,1371,744,1285,500,1376,991,576,1007,1064,1060,972,1272,969,919,651,578,922,1146,1198,1200,171,647,382,239] } },  // 김준엽 13차: 능률보카 복귀 첫 시험 = 오답풀 22 + 주기 도래 단어 중 한 번이라도 틀렸던 65 = 87 (Dean 선택). 14차부터 정규(신규 [28,29,30] + 복습)
 
@@ -566,6 +572,7 @@ async function buildTest(student, hist){
   if(_wm){ nCount = _wm.nCount || 1; }            // 워드마스터: 회차당 신규 1 DAY(40문항)
   else if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
     nCount = (dowKST === 5) ? 2 : 1;
+    if(student.name === "안성민" && _todayKST >= "2026-10-30") nCount = 2;  // 안성민 금·일 체제(2026-10-30~, Dean 2026-10-23): 매 수업 신규 2단원(요일 무관). 15차(10/30 금)=[20,21], 16차(일)=[22,23] … 10/25(일) 14차는 REVIEW_SET으로 복습만
     if(student.name === "서승원") nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 상시 체제(2026-07-27~, Dean): 월 2단원·금 1단원 — 회차 parity(짝=2/홀=1)로 구현해 보강 요일 무관. r4(월)=[5,6], r5(금)=1단원, r6(월)=2단원 …
     if(student.name === "서승원" && round >= 12) nCount = (round % 2 === 0) ? 1 : 2;  // 서승원 parity 반전(2026-08-24~, Dean): r11(8/24 월)이 1단원으로 나가면서 요일-단원수가 어긋남 → 12차부터 짝수회차=1단원·홀수회차=2단원. 12차=[17] 24문항, 13차=[18,19] …
     if(student.name === "서승원" && round >= 17) nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 parity 재반전(2026-09-15, Dean): 9/11 결강으로 16차(9/14 월)가 1단원 23단원으로 나감 → 17차부터 짝수회차=2단원·홀수회차=1단원. 17차(9/18 금)=24단원 26문항, 18차(월)=25,26단원
@@ -805,10 +812,16 @@ window.proceedStudent = async function(student, resume){
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
       <div class="pill">${head}</div>
       <button class="btn-primary" onclick="startTest()">시험 시작</button>
-      ${test.review.some(r=>r.type==="wrong"||r.type==="sr") && !test.diagPlus ? `<div class="row"><button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest')">📖 시험 전에 복습 단어 공부하기</button></div>` : ""}`;
+      <div class="row">${test.items.length && !test.diag && !test.cloze ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','new')">✨ 시험 전에 신규 단어 공부하기</button>` : ""}${test.review.some(r=>r.type==="wrong"||r.type==="sr") && !test.diagPlus ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','review')">📖 시험 전에 복습 단어 공부하기</button>` : ""}</div>
+      ${last ? `<div class="small" id="ptime" style="margin-top:6px"></div>` : ""}`;
   }
   app.innerHTML = `<div class="card"><h2>${esc(student.name)}</h2>${body}
     <div class="row"><button class="btn-ghost btn-sm" onclick="home()">← 이름 다시 선택</button></div></div>`;
+  const _pt = document.getElementById("ptime");
+  if(_pt && hist.attempts.length){
+    const _la = hist.attempts.reduce((m,a) => a.taken_at > m ? a.taken_at : m, "");
+    studyTimeBetween(student.id, _la, null).then(o => { if(_pt.isConnected) _pt.innerHTML = `⏱ 지난 시험 이후 내 공부 시간: 복습 <b>${fmtStudy(o.review)}</b> · 신규 <b>${fmtStudy(o.new)}</b>`; }).catch(()=>{});
+  }
 };
 
 window.startTest = function(){
@@ -1027,6 +1040,7 @@ window.submitResult = async function(){
          ${rt? `&nbsp; ${rc} / ${rt} <span class="small">복습</span>`:""}</div>
        <div class="pill">틀린 단어는 다음 복습 시험에 다시 나와요 💪${anyRev?'<br><span class="small">⚠️ 표시는 선생님이 한 번 더 확인할 답이에요. 맞는 답이면 나중에 점수가 올라가요.</span>':''}</div>
        ${S.graded.some(g=>!g.correct) && !S.test.diag ? `<button class="btn-primary" style="background:#7c3aed; margin:4px 0 6px" onclick="openStudy('${S.student.id}','done')">📖 틀린 단어 공부하러 가기</button><div class="small" style="margin-bottom:6px">예문 · 어원 · 연상으로 다음 시험 복습 단어를 공부할 수 있어요.</div>` : ""}
+       ${!S.test.diag ? `<button class="btn-ghost" style="width:100%; margin:0 0 6px" onclick="openStudy('${S.student.id}','done','new')">✨ 다음 시험 신규 단어 공부하기</button>` : ""}
        <table><tr><th>#</th><th>단어 / 정답</th><th>내 답</th><th>채점</th></tr>${resultTable()}</table>
        <button class="btn-primary" style="margin-top:14px" onclick="home()">처음으로</button>
      </div>`;
@@ -1085,6 +1099,7 @@ function dashShell(inner){
        <div class="tab ${T.tab==="live"?"on":""}" onclick="dashLive()">📡 실시간</div>
        <div class="tab ${T.tab==="students"?"on":""}" onclick="dashStudents()">👥 학생</div>
        <div class="tab ${T.tab==="history"?"on":""}" onclick="dashHistory()">📚 내역</div>
+       <div class="tab ${T.tab==="study"?"on":""}" onclick="dashStudy()">⏱ 공부시간</div>
      </div>
      ${inner}
      <div class="row"><button class="btn-ghost btn-sm" onclick="home()">← 나가기</button></div>
@@ -1120,8 +1135,15 @@ window.dashDetail = async function(attemptId, extraPanel){
       <td><button class="btn-ghost btn-sm" onclick="teacherFlip('${it.id}','${attemptId}')">뒤집기</button></td>
     </tr>`).join("");
   const stats = await roundStats(att, att.students?.class_day);
+  let studyLine = "";
+  try{
+    const { data: pv } = await sb.from("attempts").select("taken_at").eq("student_id", att.student_id).lt("taken_at", att.taken_at).order("taken_at",{ascending:false}).limit(1);
+    const o = await studyTimeBetween(att.student_id, pv && pv[0] ? pv[0].taken_at : null, att.taken_at);
+    studyLine = `<div class="small">⏱ 이 시험 전 공부(이전 시험 이후): 복습 <b>${fmtStudy(o.review)}</b> · 신규 <b>${fmtStudy(o.new)}</b>${o.n?` · ${o.n}번 접속`:""}</div>`;
+  }catch(e){}
   dashShell(`<h2>${esc(att.students?.name)} · ${roundLabel(att)}</h2>
     <div class="small">${fmtDate(att.taken_at)} · ${newLabel(att)} ${att.new_score}/${att.new_total}${att.rev_total?` · 복습 ${att.rev_score}/${att.rev_total}`:""}</div>
+    ${studyLine}
     ${statsHTML(stats, att)}
     ${extraPanel||""}
     <div class="pill">O/X를 뒤집으면 점수와 다음 복습 시험에 즉시 반영돼요.${reviewN?` · <b>⚠️ 감수 대기 ${reviewN}개</b>`:""}</div>
@@ -1160,6 +1182,48 @@ window.teacherFlip = async function(itemId, attemptId){
   }).eq("id", attemptId);
   if(e3) err(e3);
   dashDetail(attemptId);
+};
+
+/* ===== 공부시간 탭 (2026-10-26) — 측정은 10/26부터(그 전 기록은 열람만 있고 시간 0) ===== */
+window.dashStudy = async function(){
+  T.tab = "study"; T.detail = null;
+  dashShell(`<h2>⏱ 공부시간</h2><div class="small">불러오는 중...</div>`);
+  const since = new Date(Date.now() - 35*86400e3).toISOString(), wk = Date.now() - 7*86400e3;
+  const [{ data: sts }, { data: ats }, { data: lgs }] = await Promise.all([
+    sb.from("students").select("id,name,class_day,track,active").eq("active", true).order("name"),
+    sb.from("attempts").select("student_id,taken_at").gte("taken_at", since).order("taken_at").range(0, 4999),
+    sb.from("study_log").select("student_id,kind,active_sec,done,tried,opened_at,last_at").gte("opened_at", since).order("opened_at").range(0, 4999)
+  ]);
+  const lastAt = {}; (ats||[]).forEach(a => lastAt[a.student_id] = a.taken_at);
+  const rows = (sts||[]).filter(s => s.track !== "interview" && !/실험|테스트|test/i.test(s.name)).map(s => {
+    const L = (lgs||[]).filter(r => r.student_id === s.id);
+    const since1 = L.filter(r => !lastAt[s.id] || r.opened_at > lastAt[s.id]);
+    const sum = (arr, k) => arr.filter(r => (r.kind||"review") === k).reduce((t,r) => t + (r.active_sec||0), 0);
+    const w = L.filter(r => new Date(r.opened_at) > wk);
+    const lastS = L.filter(r => r.active_sec > 0).map(r => r.last_at).pop();
+    return { s, rv: sum(since1,"review"), nw: sum(since1,"new"), dn: since1.reduce((t,r) => t + (r.done||0), 0), w: w.reduce((t,r) => t + (r.active_sec||0), 0), lastS };
+  }).sort((a,b) => (b.rv+b.nw) - (a.rv+a.nw) || b.w - a.w);
+  const tr = rows.map(r => `<tr class="att-row" onclick="dashStudyOne('${r.s.id}')">
+      <td><b>${esc(r.s.name)}</b><br><span class="small">${classLabel(r.s.class_day)}${lastAt[r.s.id]?" · 최근 시험 "+fmtDate(lastAt[r.s.id]):""}</span></td>
+      <td>복습 <b>${fmtStudy(r.rv)}</b><br>신규 <b>${fmtStudy(r.nw)}</b>${r.dn?`<br><span class="small">✓ ${r.dn}개</span>`:""}</td>
+      <td>${fmtStudy(r.w)}</td>
+      <td class="small">${r.lastS?fmtDate(r.lastS):"-"}</td></tr>`).join("");
+  dashShell(`<h2>⏱ 공부시간</h2>
+    <div class="small" style="line-height:1.6">공부 페이지가 화면에 떠 있고 1분 안에 움직임이 있을 때만 잰 시간이에요. 측정은 10/26부터예요(그 전 열람은 0분). 종이 자료로 공부한 시간은 들어가지 않아요. 행을 누르면 접속별 기록이 나와요.</div>
+    <table><tr><th>학생</th><th>지난 시험 이후</th><th>최근 7일</th><th>마지막 공부</th></tr>${tr}</table>`);
+};
+window.dashStudyOne = async function(sid){
+  const { data: st } = await sb.from("students").select("id,name").eq("id", sid).single();
+  const { data: lgs } = await sb.from("study_log").select("kind,src,round_next,n_words,revealed,tried,done,active_sec,cards,opened_at").eq("student_id", sid).order("opened_at",{ascending:false}).limit(40);
+  const tr = (lgs||[]).map(r => {
+    const top = Object.entries(r.cards||{}).filter(([k,v]) => v.s >= 20).sort((a,b) => b[1].s - a[1].s).slice(0,5).map(([k,v]) => `${esc(k.split("|")[1])} ${fmtStudy(v.s).replace("1분 미만", v.s+"초")}`).join(", ");
+    return `<tr><td>${fmtDate(r.opened_at)}<br><span class="small">${r.kind==="new"?"✨ 신규":"📖 복습"}${r.round_next!=null?" · "+r.round_next+"회차 대비":""}</span></td>
+      <td><b>${fmtStudy(r.active_sec)}</b></td>
+      <td class="small">펼침 ${r.revealed||0}/${r.n_words||0} · 써 보고 확인 ${r.tried||0} · ✓ ${r.done||0}${top?`<br>오래 본 단어: ${top}`:""}</td></tr>`;
+  }).join("");
+  dashShell(`<h2>⏱ ${esc(st?.name)} · 공부 기록</h2>
+    <table><tr><th>접속</th><th>시간</th><th>내용</th></tr>${tr || "<tr><td>기록 없음</td></tr>"}</table>
+    <div class="row"><button class="btn-ghost btn-sm" onclick="dashStudy()">← 공부시간 목록</button></div>`);
 };
 
 /* ===== Fail-safe: 잘못된 응시 재배정 ===== */
@@ -1420,7 +1484,7 @@ function studyLogSave(){
   clearTimeout(SL.timer);
   SL.timer = setTimeout(async ()=>{
     if(!SL.id) return;
-    try{ await sb.from("study_log").update({ revealed: SL.revealed.size, done: SL.done.size, last_at: new Date().toISOString() }).eq("id", SL.id); }catch(e){}
+    stmFlush();
   }, 1200);
 }
 function studyRootMeaning(SD, unit, g){
@@ -1434,23 +1498,109 @@ function studyRootMeaning(SD, unit, g){
   return "";
 }
 
-window.openStudy = async function(studentId, src){
-  try{ history.replaceState(null, "", "?study=" + encodeURIComponent(studentId)); }catch(e){}
-  app.innerHTML = `<div class="card"><h2>📖 복습 공부</h2><div class="sub">내 복습 단어를 불러오는 중...</div></div>`;
+/* ===== 공부 시간 측정 (2026-10-26, Dean) =====
+   화면이 떠 있고(탭 visible) 최근 60초 안에 스크롤·터치·입력이 있을 때만 1초씩 셈.
+   15초마다 + 탭을 벗어날 때 study_log(active_sec, cards, tried)에 저장. 카드별 시간 = 화면 가운데 있는 카드. */
+const STM = { sec:0, act:0, cards:{}, tick:null, bound:false, prev:{review:0,new:0}, kind:"review", idle:false };
+const fmtStudy = sec => { sec = Math.round(sec||0); if(!sec) return "0분"; if(sec < 60) return "1분 미만"; const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60); return h ? `${h}시간 ${m}분` : `${m}분`; };
+const fmtClock = sec => `${Math.floor(sec/60)}분 ${String(sec%60).padStart(2,"0")}초`;
+async function studyTimeBetween(sid, fromISO, toISO){
+  let q = sb.from("study_log").select("kind,active_sec,done,tried").eq("student_id", sid);
+  if(fromISO) q = q.gt("opened_at", fromISO);
+  if(toISO) q = q.lte("opened_at", toISO);
+  const { data } = await q.range(0, 1999);
+  const o = { review:0, new:0, n:0, done:0 };
+  (data||[]).forEach(r => { const k = r.kind === "new" ? "new" : "review"; o[k] += r.active_sec||0; if(r.active_sec) o.n++; o.done += r.done||0; });
+  return o;
+}
+function stmCardStats(){
+  const out = {};
+  Object.entries(STM.cards).forEach(([k,v]) => out[k] = { ...v });
+  SL.revealed.forEach(k => (out[k] = out[k] || { s:0 }).r = 1);
+  SL.done.forEach(k => (out[k] = out[k] || { s:0 }).d = 1);
+  return out;
+}
+function stmPayload(){
+  const cards = stmCardStats();
+  return { active_sec: STM.sec, cards, tried: Object.values(cards).filter(c => c.t).length, revealed: SL.revealed.size, done: SL.done.size, last_at: new Date().toISOString() };
+}
+async function stmFlush(){
+  if(!SL.id) return;
+  try{ await sb.from("study_log").update(stmPayload()).eq("id", SL.id); }catch(e){}
+}
+function stmBeacon(){   /* 탭을 닫거나 숨길 때 — 페이지가 사라져도 전송되게 keepalive */
+  if(!SL.id) return;
+  try{
+    fetch(`${CONFIG.SUPABASE_URL}/rest/v1/study_log?id=eq.${SL.id}`, { method:"PATCH", keepalive:true,
+      headers:{ "apikey":CONFIG.SUPABASE_KEY, "Authorization":"Bearer "+CONFIG.SUPABASE_KEY, "Content-Type":"application/json", "Prefer":"return=minimal" },
+      body: JSON.stringify(stmPayload()) });
+  }catch(e){}
+}
+function stmActivity(){ STM.act = Date.now(); }
+function stmStop(){ if(STM.tick){ clearInterval(STM.tick); STM.tick = null; stmFlush(); } }
+function stmStart(kind, prev){
+  stmStop();
+  STM.sec = 0; STM.cards = {}; STM.act = Date.now(); STM.kind = kind; STM.prev = prev || { review:0, new:0 }; STM.idle = false;
+  if(!STM.bound){
+    STM.bound = true;
+    ["scroll","pointerdown","keydown","input","touchstart","wheel","mousemove"].forEach(ev => window.addEventListener(ev, stmActivity, { passive:true, capture:true }));
+    document.addEventListener("visibilitychange", () => { if(document.visibilityState === "hidden") stmBeacon(); else stmActivity(); });
+    window.addEventListener("pagehide", stmBeacon);
+  }
+  STM.tick = setInterval(stmTick, 1000);
+  stmShow();
+}
+function stmCurrent(){
+  const el = document.elementFromPoint(window.innerWidth/2, window.innerHeight/2);
+  const c = el && el.closest ? el.closest(".sc") : null;
+  return c ? c.dataset.k : null;
+}
+function stmTick(){
+  if(!document.getElementById("stime")){ stmStop(); return; }   /* 공부 페이지를 떠남 */
+  if(document.visibilityState !== "visible") return;
+  const idle = Date.now() - STM.act > 60000;
+  if(idle !== STM.idle){ STM.idle = idle; stmShow(); }
+  if(idle) return;
+  STM.sec++;
+  const k = stmCurrent();
+  if(k) (STM.cards[k] = STM.cards[k] || { s:0 }).s++;
+  stmShow();
+  if(STM.sec % 15 === 0) stmFlush();
+}
+function stmShow(){
+  const el = document.getElementById("stime"); if(!el) return;
+  const rv = STM.prev.review + (STM.kind === "review" ? STM.sec : 0), nw = STM.prev.new + (STM.kind === "new" ? STM.sec : 0);
+  el.innerHTML = `<span>⏱ 이번 공부 <b>${fmtClock(STM.sec)}</b></span>${STM.idle?'<span class="spause">⏸ 1분 동안 움직임이 없어서 멈췄어요 — 화면을 움직이면 다시 재요</span>':""}<span class="small">지난 시험 이후 내 공부 시간: 복습 <b style="font-size:.9rem">${fmtStudy(rv)}</b> · 신규 <b style="font-size:.9rem">${fmtStudy(nw)}</b></span>`;
+}
+
+window.openStudy = async function(studentId, src, kind){
+  kind = kind === "new" ? "new" : "review";
+  stmStop();
+  try{ history.replaceState(null, "", "?study=" + encodeURIComponent(studentId) + (kind === "new" ? "&kind=new" : "")); }catch(e){}
+  const KN = kind === "new" ? "신규" : "복습";
+  app.innerHTML = `<div class="card"><h2>📖 ${KN} 공부</h2><div class="sub">내 ${KN} 단어를 불러오는 중...</div></div>`;
   const { data: st, error } = await sb.from("students").select("id,name,class_day,grade,track").eq("id", studentId).maybeSingle();
   if(error || !st){ app.innerHTML = `<div class="card"><h2>📖 복습 공부</h2><div class="pill">학생 정보를 찾을 수 없어요. 선생님께 QR 코드를 다시 받아 주세요.</div><button class="btn-ghost" onclick="studyHome()">처음으로</button></div>`; return; }
   const [hist, SD] = await Promise.all([loadHistory(st.id), loadStudyData()]);
   let test = null;
   try{ test = await buildTest(st, hist); }catch(e){ test = null; }
-  let targets = ((test && test.review) || []).filter(r => r.type === "wrong" || r.type === "sr");
+  const tabsHTML = `<div class="stabs"><button class="stab ${kind==="review"?"on":""}" onclick="openStudy('${st.id}','tab','review')">📖 복습 단어</button><button class="stab ${kind==="new"?"on":""}" onclick="openStudy('${st.id}','tab','new')">✨ 신규 단어</button></div>`;
+  const newOK = test && !test.diag && !test.cloze && (test.items||[]).length;
+  let targets = kind === "new"
+    ? (newOK ? test.items.map(q => ({ word_id:q.word_id, en:q.en, unit:q.unit, type:"new" })) : [])
+    : ((test && test.review) || []).filter(r => r.type === "wrong" || r.type === "sr");
   const nRandom = ((test && test.review) || []).filter(r => r.type === "random").length;
   let mode = "next";
-  if(!targets.length && hist.wrongPool.length){
+  if(kind === "new" && !targets.length){
+    app.innerHTML = `<div class="card"><h2>📖 ${esc(st.name)} · 신규 공부</h2>${tabsHTML}<div class="pill">다음 시험에는 미리 공부할 신규 단어가 없어요.<br><span class="small">${test && test.diag ? "진단고사는 전범위 랜덤이라 미리 볼 수 없어요." : test && test.cloze ? "빈칸 문장 시험이라 미리 볼 수 없어요." : "이번 회차는 복습만 있어요."}</span></div><button class="btn-ghost" onclick="studyHome()">처음으로</button></div>`;
+    return;
+  }
+  if(kind === "review" && !targets.length && hist.wrongPool.length){
     targets = hist.wrongPool.slice(0, 40).map(w => ({ word_id:w.word_id, en:w.en, unit:w.unit, type:"wrong" }));
     mode = "pool";
   }
   if(!targets.length){
-    app.innerHTML = `<div class="card"><h2>📖 ${esc(st.name)} · 복습 공부</h2><div class="pill">지금은 공부할 복습 단어가 없어요 🎉<br><span class="small">다음 시험에는 신규 단어와 랜덤 점검 단어만 나와요.</span></div><button class="btn-ghost" onclick="studyHome()">처음으로</button></div>`;
+    app.innerHTML = `<div class="card"><h2>📖 ${esc(st.name)} · 복습 공부</h2>${tabsHTML}<div class="pill">지금은 공부할 복습 단어가 없어요 🎉<br><span class="small">다음 시험에는 신규 단어와 랜덤 점검 단어만 나와요.</span></div><button class="btn-ghost" onclick="studyHome()">처음으로</button></div>`;
     return;
   }
   /* 뜻(DB) — 공부자료가 없는 단원 대비 */
@@ -1472,7 +1622,8 @@ window.openStudy = async function(studentId, src){
     const everOk = h.some(x => x.ok);
     const lastOk = h.length ? h[h.length-1].ok : false;
     let cat;
-    if(t.type === "sr" || lastOk) cat = "sr";
+    if(t.type === "new") cat = "new";
+    else if(t.type === "sr" || lastOk) cat = "sr";
     else if(top && top.n >= 2) cat = "stuck";
     else if(everOk) cat = "flip";
     else if(!Object.keys(cnt).length) cat = "blank";
@@ -1497,16 +1648,19 @@ window.openStudy = async function(studentId, src){
     const miss = h.filter(x => !x.ok).length;
     return { ...t, h, d, top, cat, meaning, ruleAns, miss, ko: koById[t.word_id] || [] };
   });
-  const order = ["stuck","flip","blank","other","sr"];
-  cards.sort((a,b) => order.indexOf(a.cat) - order.indexOf(b.cat) || (b.top?b.top.n:0) - (a.top?a.top.n:0) || b.miss - a.miss || a.unit - b.unit);
+  const order = ["new","stuck","flip","blank","other","sr"];
+  cards.sort((a,b) => order.indexOf(a.cat) - order.indexOf(b.cat) || (b.top?b.top.n:0) - (a.top?a.top.n:0) || b.miss - a.miss || a.unit - b.unit || a.word_id - b.word_id);
 
   const roundNext = test ? test.round : null;
-  SL.sid = st.id; SL.key = "study_done_" + st.id + "_" + (roundNext ?? "p"); SL.total = cards.length;
+  SL.sid = st.id; SL.key = (kind === "new" ? "study_new_" : "study_done_") + st.id + "_" + (roundNext ?? "p"); SL.total = cards.length;
   SL.revealed = new Set(); SL.done = new Set();
   try{ JSON.parse(localStorage.getItem(SL.key) || "[]").forEach(k => SL.done.add(k)); }catch(e){}
   SL.id = null;
+  const _lastAt = hist.attempts.length ? hist.attempts.reduce((m,a) => a.taken_at > m ? a.taken_at : m, "") : null;
+  let prevT = { review:0, new:0 };
+  try{ prevT = await studyTimeBetween(st.id, _lastAt, null); }catch(e){}
   try{
-    const { data: lg } = await sb.from("study_log").insert({ student_id: st.id, src: src || "link", round_next: roundNext, n_words: cards.length, n_stuck: cards.filter(c=>c.cat==="stuck").length }).select("id").single();
+    const { data: lg } = await sb.from("study_log").insert({ student_id: st.id, kind, src: src || "link", round_next: roundNext, n_words: cards.length, n_stuck: cards.filter(c=>c.cat==="stuck").length }).select("id").single();
     if(lg) SL.id = lg.id;
   }catch(e){}
 
@@ -1516,6 +1670,7 @@ window.openStudy = async function(studentId, src){
   const famList = Object.values(fam).filter(f => f.ws.length >= 2).sort((a,b) => b.ws.length - a.ws.length);
 
   const SEC = {
+    new:   ["✨ 다음 시험 신규 단어", "예문을 읽고 뜻을 먼저 <b>추론해서 써 본 뒤</b> 펼쳐서 확인해요. 펼친 뒤에는 <b>어근·어원·연상</b>까지 읽어서 뜻이 만들어지는 원리를 잡아요."],
     stuck: ["🔴 안다고 믿는 단어", "같은 오답을 두 번 이상 쓴 단어예요. 이런 단어는 새로 외우기보다 <b>틀린 답을 먼저 지워야</b> 해요. 단어를 보면 떠오르는 그 뜻을 쓰지 말고, 펼쳐서 나오는 <b>규칙</b>대로 쓰세요."],
     flip:  ["🟠 맞혔다가 다시 틀린 단어", "한 번은 맞혔던 단어예요. 몰라서가 아니라 흔들린 거예요. 예문으로 다시 붙잡아요."],
     blank: ["⚪ 아직 한 번도 답을 못 쓴 단어", "머릿속에 아직 자리가 없는 단어예요. 예문으로 먼저 추론해 보고, 펼친 뒤에는 <b>어근·어원</b>까지 꼭 읽어서 뜻이 만들어지는 원리를 잡아요."],
@@ -1537,7 +1692,7 @@ window.openStudy = async function(studentId, src){
       <div class="sch"><span class="sw">${esc(c.en)}</span><span class="small">${c.unit}단원</span>
         <button class="sdb" onclick="studyDone(${i})">${SL.done.has(k)?"↩︎ 다시 보기":"✓ 이제 알아요"}</button></div>
       <div class="sbody">
-      <div class="shist">${histHTML(c.h)}</div>
+      ${c.cat==="new" && !c.h.length ? "" : `<div class="shist">${histHTML(c.h)}</div>`}
       ${c.cat==="stuck"?`<div class="sstuck">❌ 내가 <b>${c.top.n}번</b> 쓴 답 <b>‘${esc(c.top.a)}’</b> — 이 뜻이 아니에요!</div>`:""}
       ${d&&d.s?`<div class="sex">${d.s}</div>`:""}
       <input type="text" class="sgin" id="sg${i}" placeholder="${d&&d.s?"예문을 보고 뜻을 추론해 써 보세요":"뜻을 떠올려 써 보세요"}" autocomplete="off">
@@ -1555,12 +1710,16 @@ window.openStudy = async function(studentId, src){
     </div>`;
   });
   window.__studyCards = cards;
-  const head = mode === "next"
+  const head = kind === "new"
+    ? `<b>${roundNext}회차</b> 시험에 나올 신규 단어 <b>${cards.length}개</b>예요. <span class="small">(${unitNames(test.newUnits)})</span>`
+    : mode === "next"
     ? `<b>${roundNext}회차</b> 시험에 나올 복습 단어 <b>${cards.length}개</b>예요.${nRandom?`<br><span class="small">이 밖에 랜덤 점검 ${nRandom}문항은 시험 때 정해져서 미리 볼 수 없어요.</span>`:""}`
     : `지금 내 오답 목록에 있는 단어 <b>${cards.length}개</b>예요.`;
   app.innerHTML = `
     <div class="card">
-      <h1>📖 ${esc(st.name)} · 복습 공부</h1>
+      <h1>📖 ${esc(st.name)} · ${KN} 공부</h1>
+      ${tabsHTML}
+      <div class="stime" id="stime"></div>
       <div class="pill">${head}</div>
       <div class="small" style="line-height:1.7">공부 순서: ① 힌트 없이 <b>예문만 읽고</b> 뜻을 <b>추론해서 써 보기</b> → ② 눌러서 뜻·어근·연상 확인 → ③ 알게 된 단어는 <b>✓ 이제 알아요</b>를 눌러 접어 두기</div>
       <div class="progress" style="margin-top:12px"><div id="sprog" style="width:0%"></div></div>
@@ -1570,6 +1729,7 @@ window.openStudy = async function(studentId, src){
     ${famList.length?`<div class="card"><details class="sfam" style="margin:0"><summary style="cursor:pointer"><b>🌱 다 풀었으면 — 어근으로 묶어 보기</b></summary><div style="margin-top:6px">${famList.map(f=>`<span class="sfc"><b>${esc(f.g)}</b>${f.mean?" ("+esc(f.mean)+")":""} — ${f.ws.map(esc).join(" · ")}</span>`).join("")}</div></details></div>`:""}
     <div class="card"><button class="btn-primary" onclick="studyHome()">처음 화면으로</button></div>`;
   studyProg();
+  stmStart(kind, prevT);
 };
 function studyProg(){
   const p = SL.total ? Math.round(SL.done.size / SL.total * 100) : 0;
@@ -1583,6 +1743,7 @@ window.studyRev = function(i){
   const c = window.__studyCards[i];
   SL.revealed.add(c.unit + "|" + c.en); studyLogSave();
   const g = (document.getElementById("sg"+i) || {}).value || "";
+  if(g.trim()){ const kk = c.unit + "|" + c.en; (STM.cards[kk] = STM.cards[kk] || { s:0 }).t = 1; }
   const v = document.getElementById("sv"+i);
   if(v && g.trim()){
     const ok = autoGrade(c.d ? [c.meaning, ...c.ko] : c.ko, g).correct;
@@ -1600,9 +1761,9 @@ window.studyDone = function(i){
   try{ localStorage.setItem(SL.key, JSON.stringify([...SL.done])); }catch(e){}
   studyProg(); studyLogSave();
 };
-window.studyHome = function(){ try{ history.replaceState(null, "", location.pathname); }catch(e){} home(); };
+window.studyHome = function(){ stmStop(); try{ history.replaceState(null, "", location.pathname); }catch(e){} home(); };
 
-(function(){ const q = new URLSearchParams(location.search); const s = q.get("study"); if(s) openStudy(s, q.get("src") || "link"); else home(); })();
+(function(){ const q = new URLSearchParams(location.search); const s = q.get("study"); if(s) openStudy(s, q.get("src") || "link", q.get("kind")); else home(); })();
 </script>
 </body>
 </html>
