@@ -89,7 +89,7 @@
 const CONFIG = {
   SUPABASE_URL: "https://xtxuozcbeqruuigeijsz.supabase.co",
   SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0eHVvemNiZXFydXVpZ2VpanN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjI4MzMsImV4cCI6MjA5ODczODgzM30.kuHunWODG6_lv3JajIMmr6Xw7yEORy-Dixs-EB4sYaM",
-  TEACHER_PIN: "5204",              // 선생님 대시보드 비밀번호
+  /* TEACHER_PIN 삭제(2026-10-27): 선생님 비밀번호는 Supabase RPC teacher_pin_verify로 서버 검증 — 다른 앱과 동일 */
   NEW_UNITS: { "화": 2, "목": 1 },
   SUPPLEMENTS: { "신예지": { round: 4, units: [5,6] } },  // 결시 보충: 빠진 신규 단원만 추가 응시→기존 attempt에 병합   // 시험 "당일" 요일 기준 신규 단원 수 (학생 class_day 아님)
   MAX_UNIT: 60,
@@ -97,6 +97,7 @@ const CONFIG = {
   SR_CAP: 20,                       // 회차당 SR(주기 복습) 최대 문항 수 — 취약 단어 우선
   REVIEW_MIN: 20,                   // 복습 섹션 최소 문항 수 (부족분은 전범위 probe로 충전)
   REVIEW_MAX: 60,                   // 복습 섹션 최대 문항 수 (오답+SR+probe 합산 상한)
+  RANDOM_MIN: 10,                   // 복습 중 오답 외(SR 주기복습+전범위 probe) 최소 보장 문항 수 (2026-10-26 Dean) — 오답풀이 상한에 닿아도 옛 단원 점검이 0이 되지 않게
   DIAG_WRONG_CAP: 60,               // 진단 직후 1회차: 진단 오답 전부 출제(이 개수 상한)
   SR_INTERVALS: [1,4,8,16],         // streak별 재출제 간격(회차): 오답 다음 시험, 첫 정답 4(2주), 2연속 8(4주), 3연속+ 16(8주)
   KNOWN_INTERVAL: 26,               // 첫 노출(진단·probe) 정답 - 원래 알던 단어로 분류, 26회차(약 3개월) 뒤 재확인
@@ -107,6 +108,7 @@ const CONFIG = {
                    "b8f79c1b-8162-43dc-a8f3-f2ca9cb51609": { roundOffset: 1, skipUnits: [24] },  // 주현우(2026-09-14, 위와 동일)
                    "833a6f7f-c047-4c66-89e0-1fe36d2ee112": { skipUnits: [13,14,15] },  // 안성민(2026-08-28, Dean): [16,17] 다음은 18단원부터 이어감 — 13~15단원 영구 건너뜀(회차 오프셋 없음)
                    "fbab9c7b-1612-4ebb-9219-628b9bdb9ad9": { roundOffset: 24, skipUnits: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26] },  // 이민정(2026-10-13 합류, Dean): 오늘 진단고사 50(0회차)만 → 10/15(목)부터 25회차 · 27단원으로 반 진도 합류(1~26단원 영구 건너뜀)
+                   "37a57080-64a2-4211-9841-9687eb2da2c7": { roundOffset: 1, skipUnits: [30] },  // 신예지(2026-10-27, Dean): 10/22 결석 — 30단원 건너뛰고 반과 같은 진도(10/27 [31,32]). 복습풀은 그대로
                    "ba3bb4f6-acad-4041-a0ab-0afe6e5ac315": { roundOffset: 7, skipUnits: [1,2,3,4,5,6,7,8,9] } },  // 진도 동기화(결시 건너뛰기): {student_id:{roundOffset:n, skipUnits:[..]}} — 회차 번호를 n만큼 당기고 skipUnits는 신규 출제 대상에서 영구 제외. 2026-08-02 강준호(5회차 결시 → 6회차 [8,9]부터 반과 동기, Dean 지시)
   AMNESTY_BY_ID: { "c6e7859d-331c-4ac9-8866-af1c9c18c438": 4,
                    "5b376c0e-ab2e-4cc4-a4c9-8273489e1536": 7,
@@ -138,7 +140,7 @@ const CONFIG = {
      신규는 unitsBySchool의 과를 앞에서부터 한 회차에 하나씩(covered 기준) 출제 — 다 돌면 전 과 재출제.
      crew(문법크루)는 신규 없이 복습풀만. 내신 단어(unit >= EXAM_UNIT_MIN)는 SR/복습풀에 절대 편입되지 않음(아래 loadHistory 필터). */
   EXAM_MODE: {
-    active: true,
+    active: false,                      // 2026-10-27 비활성(10/05 만료). 12월 기말 때 학교·단원만 바꿔 재사용할 템플릿으로 보존
     untilKST: "2026-10-05",
     reviewMax: 20,                                                  // 일반 학생 복습 상한
     crewReviewMax: 40,                                              // 문법크루 복습 상한
@@ -159,7 +161,7 @@ const CONFIG = {
      active:false 또는 untilKST 경과 시 자동으로 영→한으로 복귀. */
   /* rounds: [] = 기간 내 전 회차. examUnitsOnly:true = 내신 단어(unit >= EXAM_UNIT_MIN)만 한영,
      능률보카 복습 문항은 영한 유지 (2026-09-23 Dean 확정). */
-  KOEN_MODE: { active: true, untilKST: "2026-10-05", rounds: [], hintChars: 1, examUnitsOnly: true },
+  KOEN_MODE: { active: false, untilKST: "2026-10-05",  /* 2026-10-27 비활성(만료) — 기말 템플릿 */ rounds: [], hintChars: 1, examUnitsOnly: true },
   /* ===== 워드마스터 개인 트랙 (2026-09-19, Dean): 안성민 워드마스터 전용 계정 =====
      class_day "WM" 학생은 능률보카(1~60단원) 대신 WM.unitMin~unitMax 단원(801~805 = DAY 01~05)만 사용한다.
      진단고사 = 시험범위 전 단어 전수(diagAll:true), 이후 회차는 nCount 단원씩 신규 + 정규 SR 복습(복습 로직은 능률보카와 동일).
@@ -168,32 +170,7 @@ const CONFIG = {
   /* 문장 빈칸 시험(CLOZE_BY_ID, 2026-10-09 Dean): 지정 학생은 untilKST까지 매 응시를 '영어 문장 빈칸 쓰기'로 대체.
      한글 해석·첫 글자 힌트 없음. 문항 = 빈칸 하나(정답은 words unit 981의 en과 같은 철자). 복습 0.
      unit 981 = EXAM_UNIT_MIN(940) 이상이라 SR/복습풀에 섞이지 않음. {1}{2} = 문장 속 빈칸 자리 */
-  CLOZE_BY_ID: { "66230950-25c4-4ebb-98b9-5a7191f7d8ef": { untilKST: "2026-10-14", unit: 981, label: "워드마스터 Review Test (Day 1~4) · 문장 빈칸",
-    items: [
-      ["Sociologists have a desire to be {1} with their words, beliefs, {2}, and deeds.", ["consistent","attitudes"]],
-      ["His father, who practiced law, {1} him to read a lot.", ["encouraged"]],
-      ["To be {1} under all circumstances requires strong {2}.", ["courageous","determination"]],
-      ["We want you to {1} less and recycle more.", ["consume"]],
-      ["There are lots of courses {1} that are good.", ["available"]],
-      ["They found rare {1} in the simple songs that they sang aboard their ships.", ["comfort"]],
-      ["National Galleries in Washington are maintained at public {1}.", ["expense"]],
-      ["Standard English allows access to certain educational and {1} opportunities, which is the {2} reason for teaching it.", ["economic","primary"]],
-      ["This support will {1} better-prepared employees and higher profits.", ["generate"]],
-      ["Before long more than 3,800 caves surrounding the city had been {1}.", ["discovered"]],
-      ["The {1} role of hand gestures is to mark the points of emphasis in our speech.", ["essential"]],
-      ["You should answer the questions {1}. (두 단어)", ["in detail"]],
-      ["There are many sensations and feelings that we can experience but not fully {1}.", ["defined"]],
-      ["If you learn the {1} techniques, then the passion, if it is genuine, will come through.", ["proper"]],
-      ["He was also dedicated to the {1} of the nation in politics and philosophy.", ["prosperity"]],
-      ["This technology might {1} the life of a man by a hundred years.", ["extend"]],
-      ["Biologists {1} for the human desire for art in other terms.", ["account"]],
-      ["More {1} use of computers will create a serious danger to our health.", ["frequent"]],
-      ["Even the same singer will {1} on two different occasions.", ["vary"]],
-      ["His remarks {1} that he has no intention to get back home.", ["signify"]],
-      ["The city council has been very slow to {1} the needs of the {2} community.", ["meet","disabled"]],
-      ["Expensive products are usually difficult to {1}.", ["manufacture"]],
-      ["Making better decisions when picking out jams or bottles of wine is best done with the emotional brain, which generates its {1} automatically.", ["verdict"]]
-    ] } },
+  CLOZE_BY_ID: {},  // 2026-10-27 삭제: 10/14 만료된 안성민 WM 문장빈칸(unit 981) — 원본은 git 커밋 6dd91a8 이전 판에 있음
   /* ===== 복습만 보는 날 (2026-10-06, Dean): 지정 날짜(KST)에 지정 학생은 신규 없이 능률보카 복습풀만 (문법크루 방식) =====
      그날이 지나면 자동으로 정규 모드 — 진도(covered)는 소모되지 않으므로 다음 회차 신규 단원은 그대로 이어짐. */
   REVIEW_ONLY_BY_DATE: { "2026-10-06": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진"], reviewMax: 40 },   // 신서중 3명 + 문법크루 3명
@@ -624,8 +601,9 @@ async function buildTest(student, hist){
   const due = hist.srPool.filter(w => !newIdSet.has(w.word_id) && (round - w.lastRound) >= iv(w));
 
   /* 오답: 전부 출제 (REVIEW_MAX 한도 내) */
+  const _randRes = isPostDiag ? 0 : Math.min(CONFIG.RANDOM_MIN || 0, revMax);  // 오답 외 예약석(2026-10-26 랜덤 소멸 수정)
   const wrongs = due.filter(w=>w.streak===0).sort((a,b)=>b.miss-a.miss)
-    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : revMax);
+    .slice(0, isPostDiag ? CONFIG.DIAG_WRONG_CAP : revMax - _randRes);  // 남는 오답(miss 적은 순)은 다음 회차로 이월
   /* SR: 취약 단어 우선(낮은 streak, miss 많은 순, 연체 큰 순), 상한 SR_CAP */
   const srs = isPostDiag ? [] :
     due.filter(w=>w.streak>0)
@@ -635,7 +613,8 @@ async function buildTest(student, hist){
 
   /* REVIEW_MIN까지 전범위 probe(한 번도 안 나온 단어)로 충전 — 첫 노출 정답이면 '원래 알던 단어'(3개월 뒤) */
   let randIds = [];
-  const needFill = Math.min(CONFIG.REVIEW_MIN, revMax) - (wrongs.length + srs.length);
+  const needFill = Math.min(revMax - (wrongs.length + srs.length),
+                            Math.max(Math.min(CONFIG.REVIEW_MIN, revMax) - (wrongs.length + srs.length), _randRes - srs.length));  // SR이 예약석을 다 못 채우면 probe로 충전
   if(!isPostDiag && needFill > 0){
     const allW = await selAll(() => sb.from("words").select("id").gte("unit", _uLo).lte("unit", _uHi).order("id"));  // 1000행 제한 회피(2026-10-21): 이전엔 1474단어 중 1000개만 랜덤 후보였음
     const seen = new Set(hist.seenIds);
@@ -1084,7 +1063,8 @@ function askPin(label){
 window.teacherLogin = async function(){
   const pin = await askPin("선생님 비밀번호");
   if(pin === null) return;
-  if(pin !== CONFIG.TEACHER_PIN){ return alert("비밀번호가 달라요"); }
+  const { data: _pinOk, error: _pinErr } = await sb.rpc("teacher_pin_verify", { p_pin: pin });  // 서버 검증(2026-10-27)
+  if(_pinErr || _pinOk !== true){ return alert("비밀번호가 달라요"); }
   T = { tab: "live", pin };
   sb.channel("rt")
     .on("postgres_changes",{event:"*",schema:"public",table:"attempts"}, ()=>{ if(T.tab==="live") dashLive(); })
