@@ -1195,7 +1195,7 @@ window.dashStudy = async function(){
     sb.from("study_log").select("student_id,kind,active_sec,done,tried,opened_at,last_at").gte("opened_at", since).order("opened_at").range(0, 4999)
   ]);
   const lastAt = {}; (ats||[]).forEach(a => lastAt[a.student_id] = a.taken_at);
-  const rows = (sts||[]).filter(s => s.track !== "interview" && !/실험|테스트|test/i.test(s.name)).map(s => {
+  const rows = (sts||[]).filter(s => s.track !== "interview" && !/실험|테스트|test/i.test(s.name) && (lastAt[s.id] || (lgs||[]).some(r => r.student_id === s.id))).map(s => {
     const L = (lgs||[]).filter(r => r.student_id === s.id);
     const since1 = L.filter(r => !lastAt[s.id] || r.opened_at > lastAt[s.id]);
     const sum = (arr, k) => arr.filter(r => (r.kind||"review") === k).reduce((t,r) => t + (r.active_sec||0), 0);
@@ -1218,7 +1218,7 @@ window.dashStudyOne = async function(sid){
   const tr = (lgs||[]).map(r => {
     const top = Object.entries(r.cards||{}).filter(([k,v]) => v.s >= 20).sort((a,b) => b[1].s - a[1].s).slice(0,5).map(([k,v]) => `${esc(k.split("|")[1])} ${fmtStudy(v.s).replace("1분 미만", v.s+"초")}`).join(", ");
     return `<tr><td>${fmtDate(r.opened_at)}<br><span class="small">${r.kind==="new"?"✨ 신규":"📖 복습"}${r.round_next!=null?" · "+r.round_next+"회차 대비":""}</span></td>
-      <td><b>${fmtStudy(r.active_sec)}</b></td>
+      <td><b>${r.opened_at < "2026-10-26T12:00:00Z" ? '<span class="small">측정 전</span>' : r.active_sec < 60 ? (r.active_sec||0)+"초" : fmtStudy(r.active_sec)}</b></td>
       <td class="small">펼침 ${r.revealed||0}/${r.n_words||0} · 써 보고 확인 ${r.tried||0} · ✓ ${r.done||0}${top?`<br>오래 본 단어: ${top}`:""}</td></tr>`;
   }).join("");
   dashShell(`<h2>⏱ ${esc(st?.name)} · 공부 기록</h2>
