@@ -174,6 +174,9 @@ const CONFIG = {
   REVIEW_ONLY_BY_DATE: { "2026-10-06": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진"], reviewMax: 40 },   // 신서중 3명 + 문법크루 3명
                         "2026-10-09": { names: ["홍서연","이은솔"], reviewMax: 40 }, 
                         "2026-10-08": { names: ["김규현","이은솔","주현우","신예지","홍서연","박서진","강준호","황서율","엄선우"], reviewMax: 40 } },  // 10/8(목): 강준호 합류 + 목일 황서율·엄선우도 복습만 (Dean 2026-10-06)
+  /* ===== 복습만 기간 (2026-11-17, Dean): 2학기 기말 내신기간 — fromKST부터 통합반(class_day)은 신규 없이 능률보카 복습풀만 =====
+     끄는 법: untilKST에 마지막 날짜("YYYY-MM-DD")를 넣거나 이 줄을 null로. 진도(covered)는 소모되지 않아 재개 시 신규 단원이 그대로 이어짐. */
+  REVIEW_ONLY_FROM: { fromKST: "2026-11-17", untilKST: null, classDay: "화", reviewMax: 40 },
   CLASS_DOW_RULE_FROM: "2026-10-09",  // 통합반 요일 기준 전환일(2026-10-08 Dean): 이 날짜(KST)부터 화=신규 2단원·그 외 요일=1단원 (회차 parity 폐기 — 시험기간 동안 학생별 회차가 흩어짐). 10/8(목) 복습만 시험엔 영향 없음
   EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
@@ -534,8 +537,10 @@ async function buildTest(student, hist){
   const _exCrew = _emLive && (_em.crew||[]).includes(student.name);
   const _exSchool = _emLive ? (_em.schoolByName||{})[student.name] : null;
   const _exOn = _emLive && (_exCrew || !!_exSchool);
-  const _roCfg = (CONFIG.REVIEW_ONLY_BY_DATE||{})[_todayKST];
-  const _ro = !_emExtra && !!_roCfg && (_roCfg.names||[]).includes(student.name);  // 오늘 복습만(2026-10-06) — 연장 회차가 우선
+  const _roF = CONFIG.REVIEW_ONLY_FROM;
+  const _roFOn = !!_roF && student.class_day === _roF.classDay && _todayKST >= _roF.fromKST && (!_roF.untilKST || _todayKST <= _roF.untilKST);  // 복습만 기간(2026-11-17~)
+  const _roCfg = _roFOn ? _roF : (CONFIG.REVIEW_ONLY_BY_DATE||{})[_todayKST];
+  const _ro = !_emExtra && !!_roCfg && (_roFOn || (_roCfg.names||[]).includes(student.name));  // 오늘 복습만(2026-10-06) — 연장 회차가 우선
   /* 한→영 모드(2026-09-22): 시험기간 학교반 + 지정 회차에만 */
   const _km = CONFIG.KOEN_MODE || {};
   const _koen = !!_km.active && !!_exSchool
