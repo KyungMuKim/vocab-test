@@ -78,7 +78,7 @@
   .sverd{font-size:.88rem; border-radius:8px; padding:6px 10px; background:#f1f5f9; margin:6px 0;} .sverd.ok{background:#f0fdf4;} .sverd.no{background:#fef2f2;}
   .stabs{display:flex; gap:6px; margin:10px 0 4px;} .stab{flex:1; text-align:center; padding:9px; border-radius:10px; background:#eef1f8; font-weight:700; font-size:.9rem; cursor:pointer; border:none; color:var(--ink);} .stab.on{background:#4f46e5; color:#fff;}
   .stime{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; background:#f0f9ff; border-radius:10px; padding:8px 12px; margin:10px 0 2px; font-size:.88rem; color:#0c4a6e;} .stime b{font-size:1.05rem;} .stime .spause{color:#b45309; font-weight:700;}
-  .sc.cat-new{border-left-color:#7c3aed;}
+  .sc.cat-new{border-left-color:#7c3aed;} .sc.cat-eew{border-left-color:#dc2626;} .sc.cat-eesp{border-left-color:#d97706;}
   .sfam{background:#faf5ff; border-radius:10px; padding:10px 12px; margin-top:12px; font-size:.86rem; line-height:1.7;} .sfc{display:block;}
 </style>
 </head>
@@ -177,6 +177,16 @@ const CONFIG = {
   /* ===== 복습만 기간 (2026-11-17, Dean): 2학기 기말 내신기간 — fromKST부터 통합반(class_day)은 신규 없이 능률보카 복습풀만 =====
      끄는 법: untilKST에 마지막 날짜("YYYY-MM-DD")를 넣거나 이 줄을 null로. 진도(covered)는 소모되지 않아 재개 시 신규 단원이 그대로 이어짐. */
   REVIEW_ONLY_FROM: { fromKST: "2026-11-17", untilKST: null, classDay: "화", reviewMax: 40 },
+  /* ===== 기말 내신모드: 전범위 영영풀이 시험 (2026-11-20, Dean) =====
+     학교반(schoolByName)은 한 시험 cap(60)문항 = 내신 전범위 영영풀이(cap − reviewMax = 40) + 능률보카 복습풀(reviewMax 20, 기존 영→한).
+     내신 문항: 영어 뜻풀이(naesin_ee.json의 d)를 보고 영어 단어 쓰기 + 첫 글자 힌트. 학교 유인물이 준 정의는 sp:1 → 화면에 '학교 제공' 표시.
+     출제 순서: ① 직전에 틀린 내신 단어(많이 틀린 순) → ② 아직 안 나온 학교 제공 단어 → ③ 아직 안 나온 나머지(랜덤) → ④ 맞힌 단어(오래된 순).
+     untilBySchool(학교 시험 마지막 날, KST)을 넘기면 그 학교 학생은 자동으로 아래 REVIEW_ONLY_FROM(복습만)으로 돌아감. 끄는 법: active:false.
+     내신 단어(unit >= 940)는 능률보카 SR/복습풀에 섞이지 않음. */
+  EXAM_EE: { active: true, fromKST: "2026-11-20", cap: 60, reviewMax: 20, hintChars: 1,
+    schoolByName: { "김규현":"신서", "이은솔":"신서", "주현우":"신서", "엄선우":"목일", "황서율":"목일", "이민정":"목일", "강준호":"신남", "박서진":"목동", "신예지":"광명", "홍서연":"광명" },
+    unitsBySchool: { "신서":[963,964], "목일":[947,948], "신남":[957,958], "목동":[956,957,958], "광명":[965,966,967,968] },
+    untilBySchool: { "신서":"2026-12-17", "목일":"2026-12-09", "신남":"2026-12-09", "목동":"2026-12-11", "광명":"2026-12-09" } },
   CLASS_DOW_RULE_FROM: "2026-10-09",  // 통합반 요일 기준 전환일(2026-10-08 Dean): 이 날짜(KST)부터 화=신규 2단원·그 외 요일=1단원 (회차 parity 폐기 — 시험기간 동안 학생별 회차가 흩어짐). 10/8(목) 복습만 시험엔 영향 없음
   EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
@@ -253,10 +263,20 @@ function lev(a,b){
     const t=prev; prev=cur; cur=t; }
   return prev[n];
 }
+/* 숙어 정답의 허용 변형(2026-11-20 기말 영영): do one's best → do my/your/his/her/our/their/its best, be afraid of → am/is/are/was/were afraid of · afraid of */
+function enAlts(en){
+  const base = String(en||"").toLowerCase().trim();
+  let v = [base];
+  if(/\bone's\b/.test(base)) v = v.concat(["my","your","his","her","our","their","its"].map(p => base.replace(/\bone's\b/g, p)));
+  let out = v.slice();
+  v.forEach(x => { if(/^be\s+/.test(x)){ const r = x.replace(/^be\s+/, ""); out.push(r); ["am","is","are","was","were"].forEach(b => out.push(b + " " + r)); } });
+  return out.map(normEn);
+}
 function autoGradeEn(en, ans, ko){
   const a = normEn(ans); if(!a) return { correct:false, review:false };
   const t = normEn(en);
   if(a === t) return { correct:true, review:false };
+  if(enAlts(en).indexOf(a) >= 0) return { correct:true, review:false };   // one's → my/your/…, 맨 앞 be → am/is/are/… 또는 생략 (2026-11-20)
   /* 교재가 "(비슷한말 X)"로 제시한 단어를 쓴 경우 — 오답 확정 대신 감수로 넘김 (반대말은 제외) */
   const _syn = [];
   (Array.isArray(ko)?ko:[ko]).forEach(k => String(k||"").replace(/비슷한말\s*([A-Za-z][A-Za-z' -]*)/g, (m,w)=>{ const n=normEn(w); if(n) _syn.push(n); return m; }));
@@ -298,7 +318,16 @@ const stripEnHints = s => String(s||"")
   .replace(/\([^)]*[A-Za-z][^)]*\)/g," ")
   .replace(/\s{2,}/g," ").replace(/\s+([,·\/])/g,"$1").trim().replace(/[,·\/]\s*$/,"");
 /* 한영 제시어: 영영 회차(test.eedef)면 영어 정의, 아니면 한글 뜻(영문 괄호 제거) */
-const koenPrompt = (test, q) => (test && test.eedef && (CONFIG.EN_DEF||{})[q.en]) ? CONFIG.EN_DEF[q.en] : stripEnHints((q.ko||[]).join(" / "));
+const koenPrompt = (test, q) => (q && q.def) ? q.def : (test && test.eedef && (CONFIG.EN_DEF||{})[q.en]) ? CONFIG.EN_DEF[q.en] : stripEnHints((q.ko||[]).join(" / "));
+const spBadge = q => (q && q.sp) ? '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">학교 제공</span>' : "";
+/* 기말 내신 영영 자료(naesin_ee.json): {units:{u:{name,school,roots,n}}, words:{"unit|en":{u,d(영영풀이),sp(학교 제공),m(뜻),s(예문),g(어근태그),e(어원),n(연상)}}} */
+let EE_DATA = null;
+async function loadEE(){
+  if(EE_DATA) return EE_DATA;
+  try{ const r = await fetch("naesin_ee.json?v=20261120b"); EE_DATA = await r.json(); }
+  catch(e){ return { units:{}, words:{} }; }   // 실패 시 캐시하지 않음 — 다음 호출에 재시도. 문항은 한글 뜻 제시로 대체됨
+  return EE_DATA;
+}
 /* 첫 글자 힌트: 알파벳 n개만 남기고 나머지는 _, 공백·기호는 그대로 (sign up for → s___ __ ___) */
 function enHint(en, n){
   n = Math.max(1, n||1); let shown = 0;
@@ -313,7 +342,7 @@ function enHint(en, n){
 const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; };
 const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 const fmtDate = d => new Date(d).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const UNIT_NAME = { 981:"워드마스터 문장 빈칸", 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 941:"내신 5과", 942:"내신 6과", 943:"내신 5과(유인물)", 944:"내신 6과(유인물)", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권", 991:"기말 5과", 992:"기말 7과", 993:"기말 8과" };  // 시험기간 내신 단어장 표기(학생 화면)
+const UNIT_NAME = { 981:"워드마스터 문장 빈칸", 801:"워드마스터 DAY 01", 802:"워드마스터 DAY 02", 803:"워드마스터 DAY 03", 804:"워드마스터 DAY 04", 805:"워드마스터 DAY 05", 963:"기말 6단원", 964:"기말 7단원", 947:"기말 7과", 948:"기말 8과", 956:"기말 5과", 957:"기말 6과", 958:"기말 7과", 965:"기말 5과", 966:"기말 6과", 967:"기말 7과", 968:"기말 8과", 941:"내신 5과", 942:"내신 6과", 943:"내신 5과(유인물)", 944:"내신 6과(유인물)", 951:"내신 4과", 952:"내신 5과", 961:"내신 4과", 962:"내신 5과", 971:"수능완성 단어장 1권", 972:"수능완성 단어장 2권", 991:"기말 5과", 992:"기말 7과", 993:"기말 8과" };  // 시험기간 내신 단어장 표기(학생 화면)
 const unitName = u => UNIT_NAME[u] || (u + "단원");
 const unitNames = arr => ((arr||[]).length ? (arr).map(unitName).join(", ") : "복습만");
 const classLabel = d => (d==="화"||d==="목") ? "씨앤씨 중1 Stan반" : d==="면접" ? "면접반" : d==="WM" ? "워드마스터" : (d==="개인"||d==="화목"||d==="월금") ? "개인" : (d||"");  // 화목(신지환)·월금(김준엽)도 개인수업 — 화면 표기는 '개인'으로 통일(2026-08-10, Dean). ※class_day 원문 값은 buildTest 신규단원 수 분기에 쓰이므로 DB에서 바꾸지 말 것
@@ -328,7 +357,7 @@ const draftKey = id => "vtdraft_" + id;
 function saveDraft(){
   try{ localStorage.setItem(draftKey(S.student.id), JSON.stringify({
     round:S.test.round, newUnits:S.test.newUnits, diag:!!S.test.diag, diagPlus:!!S.test.diagPlus,
-  koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew, eedef:!!S.test.eedef,
+  koen:!!S.test.koen, koenHint:S.test.koenHint||1, exam:!!S.test.exam, examCrew:!!S.test.examCrew, eedef:!!S.test.eedef, ee:!!S.test.ee,
     queue:S.queue, answers:S.answers, idx:S.idx, maxIdx:S.maxIdx||0, ts:Date.now(), name:S.student.name
   })); }catch(e){}
 }
@@ -540,12 +569,16 @@ async function buildTest(student, hist){
   const _roF = CONFIG.REVIEW_ONLY_FROM;
   const _roFOn = !!_roF && student.class_day === _roF.classDay && _todayKST >= _roF.fromKST && (!_roF.untilKST || _todayKST <= _roF.untilKST);  // 복습만 기간(2026-11-17~)
   const _roCfg = _roFOn ? _roF : (CONFIG.REVIEW_ONLY_BY_DATE||{})[_todayKST];
-  const _ro = !_emExtra && !!_roCfg && (_roFOn || (_roCfg.names||[]).includes(student.name));  // 오늘 복습만(2026-10-06) — 연장 회차가 우선
+  /* 기말 내신모드(EXAM_EE, 2026-11-20): 학교반은 전범위 영영 + 복습 20 */
+  const _ee = CONFIG.EXAM_EE || {};
+  const _eeSchool = (_ee.active && (!_ee.fromKST || _todayKST >= _ee.fromKST)) ? ((_ee.schoolByName||{})[student.name] || null) : null;
+  const _eeOn = !!_eeSchool && !_emExtra && !_wm && (!(_ee.untilBySchool||{})[_eeSchool] || _todayKST <= _ee.untilBySchool[_eeSchool]);
+  const _ro = !_eeOn && !_emExtra && !!_roCfg && (_roFOn || (_roCfg.names||[]).includes(student.name));  // 오늘 복습만(2026-10-06) — 연장 회차가 우선
   /* 한→영 모드(2026-09-22): 시험기간 학교반 + 지정 회차에만 */
   const _km = CONFIG.KOEN_MODE || {};
-  const _koen = !!_km.active && !!_exSchool
+  const _koen = _eeOn || (!!_km.active && !!_exSchool
              && (_emExtra || !_km.untilKST || _todayKST <= _km.untilKST)
-             && (!((_km.rounds||[]).length) || (_km.rounds||[]).includes(round));
+             && (!((_km.rounds||[]).length) || (_km.rounds||[]).includes(round)));
 
   const dowKST = new Date(Date.now() + 9*3600*1000).getUTCDay();  // 한국시간 요일(0=일)
   let nCount;
@@ -575,6 +608,7 @@ async function buildTest(student, hist){
   const _fu = (CONFIG.FORCE_UNITS_BY_ID||{})[student.id];
   let newUnits;
   if(_ro){ newUnits = []; }   // 복습만 보는 날: 신규 없음
+  else if(_eeOn){ newUnits = ((_ee.unitsBySchool||{})[_eeSchool] || []).slice(); }   // 기말 내신모드: 학교 시험범위 전 단원
   else if(_exOn){
     /* 시험기간: 문법크루는 신규 없음. 그 외는 학교 단어장 과를 앞에서부터 한 회차에 하나씩(이미 본 과는 건너뜀) */
     if(_exCrew){ newUnits = []; }
@@ -589,6 +623,32 @@ async function buildTest(student, hist){
   }
 
   let items = [];
+  let _eePool = null;
+  if(_eeOn && newUnits.length){
+    /* 전범위 풀: 같은 철자는 하나만(학교 제공 정의 우선 → 앞 단원 우선) */
+    const _EE = await loadEE();
+    const { data: _pw, error: _pe } = await sb.from("words").select("id,en,ko,unit").in("unit", newUnits).order("id");
+    if(_pe) err(_pe);
+    const _rec = w => (_EE.words||{})[w.unit + "|" + w.en] || null;
+    const _by = {};
+    (_pw||[]).slice().sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || newUnits.indexOf(a.unit) - newUnits.indexOf(b.unit) || a.id - b.id)
+      .forEach(w => { const k = normEn(w.en); if(!_by[k]) _by[k] = w; });
+    const _pool = Object.values(_by);
+    /* 내신 단어별 이력(loadHistory는 내신 단어를 걸러내므로 rawItems에서 직접) */
+    const _rO = Object.fromEntries(hist.attempts.map(a => [a.id, a.round]));
+    const _st = {};
+    (hist.rawItems||[]).filter(it => newUnits.includes(it.unit)).sort((x,y) => (_rO[x.attempt_id]-_rO[y.attempt_id]) || (x.seq-y.seq))
+      .forEach(it => { const k = normEn(it.en); const w = _st[k] || (_st[k] = { n:0, miss:0, last:false, lastRound:0 }); w.n++; w.last = !!it.correct; if(!it.correct) w.miss++; w.lastRound = _rO[it.attempt_id]; });
+    const _S = w => _st[normEn(w.en)];
+    const _nEE = Math.max(0, (_ee.cap || 60) - (_ee.reviewMax === undefined ? 20 : _ee.reviewMax));
+    const _wrong = _pool.filter(w => _S(w) && !_S(w).last).sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || _S(b).miss - _S(a).miss || a.id - b.id);   // 오답 중에서도 학교 제공 단어 먼저
+    const _freshSp = shuffle(_pool.filter(w => !_S(w) && (_rec(w)||{}).sp));
+    const _fresh = shuffle(_pool.filter(w => !_S(w) && !(_rec(w)||{}).sp));
+    const _okd = shuffle(_pool.filter(w => _S(w) && _S(w).last)).sort((a,b) => _S(a).lastRound - _S(b).lastRound);
+    const _mkE = w => { const r = _rec(w) || {}; return { word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new", def: r.d || "", sp: r.sp ? 1 : 0 }; };
+    items = shuffle([..._wrong, ..._freshSp, ..._fresh, ..._okd].slice(0, _nEE).map(_mkE));
+    _eePool = [..._wrong, ..._freshSp, ..._fresh, ..._okd].map(w => ({ word_id:w.id, en:w.en, unit:w.unit, type:"new", wrongEE: !!(_S(w) && !_S(w).last), seenEE: !!_S(w) }));
+  } else
   if(newUnits.length){
     const { data: newWords, error } = await sb.from("words").select("id,en,ko,unit").in("unit", newUnits);
     if(error) err(error);
@@ -601,6 +661,7 @@ async function buildTest(student, hist){
      2회차 이후: 오답 전부 + SR 도래(상한 SR_CAP, 취약 우선) + REVIEW_MIN까지 전범위 probe (합산 ≤ REVIEW_MAX) */
   let review = [];
   const revMax = _ro ? (_roCfg.reviewMax || 40)   // 복습만 보는 날 상한(2026-10-06 Dean: 40)
+               : _eeOn ? (_ee.reviewMax === undefined ? 20 : _ee.reviewMax)   // 기말 내신모드: 능률보카 복습 20 (2026-11-20 Dean)
                : (_exSchool && _em.schoolNoReviewFrom && _todayKST >= _em.schoolNoReviewFrom) ? 0 : _exOn ? (_exCrew ? (_em.crewReviewMax || 40) : (_em.reviewMax || 20))            // 시험기간 상한(2026-09-14 Dean)
                        : ((CONFIG.REVIEW_MAX_BY_NAME||{})[student.name] || CONFIG.REVIEW_MAX);  // 학생별 복습 상한 (2026-07-27)
   const newIdSet = new Set(items.map(w=>w.word_id));
@@ -648,7 +709,7 @@ async function buildTest(student, hist){
   }
 
   if(!items.length && !review.length) return null;
-  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, reviewOnly: _ro, koen: _koen, koenHint: (_km.hintChars || 1), eedef: _koen && _emExtra && !!_em.extraEnEn };
+  return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, reviewOnly: _ro, koen: _koen, koenHint: (_eeOn ? (_ee.hintChars || 1) : (_km.hintChars || 1)), eedef: _eeOn || (_koen && _emExtra && !!_em.extraEnEn), ee: _eeOn, eeSchool: _eeSchool, eePool: _eePool };
 }
 
 /* ================= 반 통계 (신규/복습 각각) ================= */
@@ -746,11 +807,11 @@ window.proceedStudent = async function(student, resume){
   if(resume){
     const d = loadDraft(student.id);
     if(d && d.queue && d.queue.length){
-      let fl = { koen:d.koen, koenHint:d.koenHint, exam:d.exam, examCrew:d.examCrew, eedef:d.eedef };
-  if(d.koen === undefined){ try{ const f = await buildTest(student, hist) || {}; fl = { koen:!!f.koen, koenHint:f.koenHint||1, exam:!!f.exam, examCrew:!!f.examCrew, eedef:!!f.eedef }; }catch(e){ fl = { koen:false }; } }
+      let fl = { koen:d.koen, koenHint:d.koenHint, exam:d.exam, examCrew:d.examCrew, eedef:d.eedef, ee:d.ee };
+  if(d.koen === undefined){ try{ const f = await buildTest(student, hist) || {}; fl = { koen:!!f.koen, koenHint:f.koenHint||1, exam:!!f.exam, examCrew:!!f.examCrew, eedef:!!f.eedef, ee:!!f.ee }; }catch(e){ fl = { koen:false }; } }
       S = { student, hist,
         test:{ round:d.round, newUnits:d.newUnits, diag:d.diag, diagPlus:d.diagPlus,
-              koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew, eedef:!!fl.eedef,
+              koen:!!fl.koen, koenHint:fl.koenHint||1, exam:!!fl.exam, examCrew:!!fl.examCrew, eedef:!!fl.eedef, ee:!!fl.ee,
                 items:d.queue.filter(q=>q.type==="new"), review:d.queue.filter(q=>q.type!=="new") },
         queue:d.queue, answers:d.answers||new Array(d.queue.length).fill(""), idx:d.idx||0,
         maxIdx:Math.max(d.maxIdx||0, d.idx||0, ...(d.answers||[]).map((a,j)=>String(a||"").trim()?j:0)) };
@@ -789,6 +850,12 @@ window.proceedStudent = async function(student, resume){
       } else if(test.exam && !test.items.length){
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 이번 회차는 <b>신규 없이 복습만</b> ${test.review.length}문항 (${revParts})`
              + `<br><span class="small">시험기간이라 문법에 집중하는 기간이에요. 지금까지 틀린 단어에서만 나옵니다.</span>`;
+      } else if(test.ee){
+        const _nSp = test.items.filter(q => q.sp).length;
+        head = `📘 <b>${test.round}회차 · 내신모드</b> (${classLabel(student.class_day)}) — 총 <b>${test.items.length + test.review.length}문항</b>`
+             + `<br>📗 내신 영영풀이: ${unitNames(test.newUnits)} 전범위에서 <b>${test.items.length}문항</b>${_nSp ? ` <span class="small">(학교 제공 정의 ${_nSp}문항)</span>` : ""}`
+             + (test.review.length ? `<br>🔁 복습: 능률보카 ${test.review.length}문항 (${revParts})` : "")
+             + `<br><span class="small">내신 문항은 <b>영어 뜻풀이</b>를 읽고 맞는 <b>영어 단어</b>를 쓰면 돼요. <b>첫 글자는 힌트</b>로 보여 줘요. <b>학교 제공</b> 표시가 붙은 뜻풀이는 학교 유인물에 실린 그대로예요. 복습 문항은 지금까지처럼 뜻 쓰기예요.</span>`;
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
@@ -855,7 +922,7 @@ function question(){
      <div class="progress"><div style="width:${(done/total*100).toFixed(1)}%"></div></div>
      ${bar}
      ${q.cloze ? `<div class="word" style="font-size:19px;line-height:1.7;font-weight:500">${clozeHTML(q, Object.fromEntries(S.queue.map((x,j)=>[j,x]).filter(([j,x])=>x.cloze && x.cloze.k===q.cloze.k && j!==i && S.answers[j]).map(([j,x])=>[x.cloze.b, S.answers[j]])))}</div><div class="small" style="margin:-4px 0 8px">${q.cloze.n>1 ? "<b>"+["","①","②","③"][q.cloze.b]+"번</b> 빈칸에 들어갈 영어 단어를 쓰세요." : "빈칸에 들어갈 영어 단어를 쓰세요."}</div>`
-     : `<div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}</div>`}
+     : `<div class="word"${koen && S.test.eedef ? ' style="font-size:19px;line-height:1.45"' : ''}>${koen ? esc(koenPrompt(S.test, q)) : esc(q.en)}${badge}${koen ? spBadge(q) : ""}</div>`}
      ${koen ? `<div class="small" style="margin:-4px 0 8px">첫 글자 힌트 &nbsp;<b style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;letter-spacing:2px">${esc(enHint(q.en, S.test.koenHint||1))}</b></div>` : ""}
      <input type="text" id="ans" placeholder="${(koen || q.cloze) ? "영어 단어 입력" : "한글 뜻 입력"}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(S.answers[i])}">
      <div id="lastNote"></div>
@@ -930,7 +997,7 @@ function resultTable(){
       <td>${g.cloze
             ? `<b>${esc(g.en)}</b><br><span class="small">${clozeHTML(g, {})}</span>`
             : itemKoEn(S.test,g)
-            ? `<b>${esc(S.test.eedef ? koenPrompt(S.test, g) : stripEnHints(g.ko.join(", ")))}</b><br><span class="small">${esc(g.en)}</span>`
+            ? `<b>${esc(S.test.eedef ? koenPrompt(S.test, g) : stripEnHints(g.ko.join(", ")))}</b>${spBadge(g)}<br><span class="small">${esc(g.en)} · ${esc(stripEnHints((g.ko||[]).join(", ")))}</span>`
             : `<b>${esc(g.en)}</b><br><span class="small">${esc(g.ko.join(", "))}</span>`}</td>
       <td>${esc(g.answer)||'<span class="small">(무응답)</span>'}</td>
       <td class="${g.correct?"ok":"no"}">${g.correct?"O":"X"}${g.review?' <span title="선생님 확인 예정">⚠️</span>':''}</td>
@@ -1464,6 +1531,7 @@ async function loadStudyData(){
   if(STUDY_DATA) return STUDY_DATA;
   try{ const r = await fetch("study_data.json?v=20261021b"); STUDY_DATA = await r.json(); }
   catch(e){ STUDY_DATA = { units:{}, words:{} }; }
+  try{ const E = await loadEE(); Object.assign(STUDY_DATA.units, E.units||{}); Object.assign(STUDY_DATA.words, E.words||{}); }catch(e){}   // 기말 내신 단어(예문·영영·어근·연상) 병합 (2026-11-20)
   return STUDY_DATA;
 }
 const studyNorm = a => String(a||"").normalize("NFC").replace(/[\s.,~·'"]/g,"");
@@ -1572,10 +1640,10 @@ window.openStudy = async function(studentId, src, kind){
   const [hist, SD] = await Promise.all([loadHistory(st.id), loadStudyData()]);
   let test = null;
   try{ test = await buildTest(st, hist); }catch(e){ test = null; }
-  const tabsHTML = `<div class="stabs"><button class="stab ${kind==="review"?"on":""}" onclick="openStudy('${st.id}','tab','review')">📖 복습 단어</button><button class="stab ${kind==="new"?"on":""}" onclick="openStudy('${st.id}','tab','new')">✨ 신규 단어</button></div>`;
+  const tabsHTML = `<div class="stabs"><button class="stab ${kind==="review"?"on":""}" onclick="openStudy('${st.id}','tab','review')">📖 복습 단어</button><button class="stab ${kind==="new"?"on":""}" onclick="openStudy('${st.id}','tab','new')">${test && test.ee ? "📗 내신 단어" : "✨ 신규 단어"}</button></div>`;
   const newOK = test && !test.diag && !test.cloze && (test.items||[]).length;
   let targets = kind === "new"
-    ? (newOK ? test.items.map(q => ({ word_id:q.word_id, en:q.en, unit:q.unit, type:"new" })) : [])
+    ? (newOK ? (test.ee && test.eePool ? test.eePool : test.items.map(q => ({ word_id:q.word_id, en:q.en, unit:q.unit, type:"new" }))) : [])
     : ((test && test.review) || []).filter(r => r.type === "wrong" || r.type === "sr");
   const nRandom = ((test && test.review) || []).filter(r => r.type === "random").length;
   let mode = "next";
@@ -1610,7 +1678,7 @@ window.openStudy = async function(studentId, src, kind){
     const everOk = h.some(x => x.ok);
     const lastOk = h.length ? h[h.length-1].ok : false;
     let cat;
-    if(t.type === "new") cat = "new";
+    if(t.type === "new") cat = t.wrongEE ? "eew" : (d && d.sp) ? "eesp" : "new";
     else if(t.type === "sr" || lastOk) cat = "sr";
     else if(top && top.n >= 2) cat = "stuck";
     else if(everOk) cat = "flip";
@@ -1636,7 +1704,7 @@ window.openStudy = async function(studentId, src, kind){
     const miss = h.filter(x => !x.ok).length;
     return { ...t, h, d, top, cat, meaning, ruleAns, miss, ko: koById[t.word_id] || [] };
   });
-  const order = ["new","stuck","flip","blank","other","sr"];
+  const order = ["eew","eesp","new","stuck","flip","blank","other","sr"];
   cards.sort((a,b) => order.indexOf(a.cat) - order.indexOf(b.cat) || (b.top?b.top.n:0) - (a.top?a.top.n:0) || b.miss - a.miss || a.unit - b.unit || a.word_id - b.word_id);
 
   const roundNext = test ? test.round : null;
@@ -1658,6 +1726,8 @@ window.openStudy = async function(studentId, src, kind){
   const famList = Object.values(fam).filter(f => f.ws.length >= 2).sort((a,b) => b.ws.length - a.ws.length);
 
   const SEC = {
+    eew:   ["🔴 지난 내신 시험에서 틀린 단어", "지난 시험에서 틀린 내신 단어예요. 다음 시험에 <b>먼저 나와요</b>. 예문으로 뜻을 추론하고, 펼쳐서 <b>영영풀이</b>를 소리 내어 읽어요."],
+    eesp:  ["🏫 학교 제공 단어", "학교 유인물에 <b>영영풀이</b>가 실린 단어예요. 학교 시험에 그대로 나올 수 있으니 <b>뜻풀이를 보고 단어를 떠올리는 연습</b>까지 해요."],
     new:   ["✨ 다음 시험 신규 단어", "예문을 읽고 뜻을 먼저 <b>추론해서 써 본 뒤</b> 펼쳐서 확인해요. 펼친 뒤에는 <b>어근·어원·연상</b>까지 읽어서 뜻이 만들어지는 원리를 잡아요."],
     stuck: ["🔴 안다고 믿는 단어", "같은 오답을 두 번 이상 쓴 단어예요. 이런 단어는 새로 외우기보다 <b>틀린 답을 먼저 지워야</b> 해요. 단어를 보면 떠오르는 그 뜻을 쓰지 말고, 펼쳐서 나오는 <b>규칙</b>대로 쓰세요."],
     flip:  ["🟠 맞혔다가 다시 틀린 단어", "한 번은 맞혔던 단어예요. 몰라서가 아니라 흔들린 거예요. 예문으로 다시 붙잡아요."],
@@ -1677,16 +1747,17 @@ window.openStudy = async function(studentId, src, kind){
     const d = c.d;
     const rm = d ? studyRootMeaning(SD, c.unit, d.g) : "";
     html += `<div class="sc cat-${c.cat}${SL.done.has(k)?" sdone":""}" id="sc${i}" data-k="${esc(k)}">
-      <div class="sch"><span class="sw">${esc(c.en)}</span><span class="small">${c.unit}단원</span>
+      <div class="sch"><span class="sw">${esc(c.en)}</span><span class="small">${esc(unitName(c.unit))}</span>${d&&d.sp?' <span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">학교 제공</span>':""}
         <button class="sdb" onclick="studyDone(${i})">${SL.done.has(k)?"↩︎ 다시 보기":"✓ 이제 알아요"}</button></div>
       <div class="sbody">
-      ${c.cat==="new" && !c.h.length ? "" : `<div class="shist">${histHTML(c.h)}</div>`}
+      ${(c.cat==="new"||c.cat==="eesp") && !c.h.length ? "" : `<div class="shist">${histHTML(c.h)}</div>`}
       ${c.cat==="stuck"?`<div class="sstuck">❌ 내가 <b>${c.top.n}번</b> 쓴 답 <b>‘${esc(c.top.a)}’</b> — 이 뜻이 아니에요!</div>`:""}
       ${d&&d.s?`<div class="sex">${d.s}</div>`:""}
       <input type="text" class="sgin" id="sg${i}" placeholder="${d&&d.s?"예문을 보고 뜻을 추론해 써 보세요":"뜻을 떠올려 써 보세요"}" autocomplete="off">
       <details id="sd${i}" ontoggle="studyRev(${i})"><summary>🔍 추론했으면 눌러서 확인 — 뜻 · 어근 · 연상</summary>
         <div id="sv${i}"></div>
         <div class="smean">${esc(c.meaning)}</div>
+        ${d&&d.d?`<div class="srow"><span class="slab">영영</span><span><b>${esc(d.d)}</b>${d.sp?' <span class="small">(학교 제공)</span>':""}<br><span class="small">시험에서는 이 뜻풀이를 보고 영어 단어를 써요.</span></span></div>`:""}
         ${d&&d.c?`<div class="sclue">💡 ${esc(d.c)}</div>`:""}
         ${d&&d.g?`<div class="srow"><span class="slab">어근</span><span><span class="sg">${esc(d.g)}</span>${rm?" "+esc(rm):""}</span></div>`:""}
         ${d&&d.e?`<div class="srow"><span class="slab">어원</span><span>${esc(d.e)}</span></div>`:""}
@@ -1699,7 +1770,8 @@ window.openStudy = async function(studentId, src, kind){
   });
   window.__studyCards = cards;
   const head = kind === "new"
-    ? `<b>${roundNext}회차</b> 시험에 나올 신규 단어 <b>${cards.length}개</b>예요. <span class="small">(${unitNames(test.newUnits)})</span>`
+    ? (test.ee ? `<b>내신 전범위</b> 단어 <b>${cards.length}개</b>예요. <span class="small">(${unitNames(test.newUnits)})</span><br><span class="small">다음 시험(${roundNext}회차)에는 이 중 <b>${test.items.length}개</b>가 <b>영영풀이</b>로 나와요. 지난 시험에서 틀린 단어와 학교 제공 단어가 먼저 나와요.</span>`
+       : `<b>${roundNext}회차</b> 시험에 나올 신규 단어 <b>${cards.length}개</b>예요. <span class="small">(${unitNames(test.newUnits)})</span>`)
     : mode === "next"
     ? `<b>${roundNext}회차</b> 시험에 나올 복습 단어 <b>${cards.length}개</b>예요.${nRandom?`<br><span class="small">이 밖에 랜덤 점검 ${nRandom}문항은 시험 때 정해져서 미리 볼 수 없어요.</span>`:""}`
     : `지금 내 오답 목록에 있는 단어 <b>${cards.length}개</b>예요.`;
