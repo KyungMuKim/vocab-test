@@ -190,7 +190,7 @@ const CONFIG = {
   CLASS_DOW_RULE_FROM: "2026-10-09",  // 통합반 요일 기준 전환일(2026-10-08 Dean): 이 날짜(KST)부터 화=신규 2단원·그 외 요일=1단원 (회차 parity 폐기 — 시험기간 동안 학생별 회차가 흩어짐). 10/8(목) 복습만 시험엔 영향 없음
   EXAM_UNIT_MIN: 940,               // 이 값 이상 unit = 내신 단어장 세트 — SR/복습풀/probe에서 제외
   RECENT_WARN_MIN: 30,              // 최근 N분 내 응시 기록 있으면 경고
-  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
+  EXCLUDE_NAMES: ["실험용","실험","테스트","test","딘","안성민","서승원","신지환","김준엽","김민서"]  // 반 통계에서 제외할 계정 (개인수업 학생 전원 — 2026-08-10 신지환·김준엽 추가, Dean: 둘 다 개인수업)
 };
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 const app = document.getElementById("app");
@@ -586,6 +586,7 @@ async function buildTest(student, hist){
   else if(student.class_day === "개인"){          // 개인수업(월금 체제): 금요일 신규 2단원, 그 외(월 등) 1단원
     nCount = (dowKST === 5) ? 2 : 1;
     if(student.name === "안성민" && _todayKST >= "2026-10-30") nCount = 2;  // 안성민 금·일 체제(2026-10-30~, Dean 2026-10-23): 매 수업 신규 2단원(요일 무관). 15차(10/30 금)=[20,21], 16차(일)=[22,23] … 10/25(일) 14차는 REVIEW_SET으로 복습만
+    if(student.id === "e0b2109d-00fc-4502-a90f-7f4556cfdf0d") nCount = 2;  // 김민서(개인수업, 2026-11-20 합류, Dean 2026-11-20): 매 수업 신규 2단원 고정(요일 무관). r1=[1,2], r2=[3,4] …
     if(student.name === "서승원") nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 상시 체제(2026-07-27~, Dean): 월 2단원·금 1단원 — 회차 parity(짝=2/홀=1)로 구현해 보강 요일 무관. r4(월)=[5,6], r5(금)=1단원, r6(월)=2단원 …
     if(student.name === "서승원" && round >= 12) nCount = (round % 2 === 0) ? 1 : 2;  // 서승원 parity 반전(2026-08-24~, Dean): r11(8/24 월)이 1단원으로 나가면서 요일-단원수가 어긋남 → 12차부터 짝수회차=1단원·홀수회차=2단원. 12차=[17] 24문항, 13차=[18,19] …
     if(student.name === "서승원" && round >= 17) nCount = (round % 2 === 0) ? 2 : 1;  // 서승원 parity 재반전(2026-09-15, Dean): 9/11 결강으로 16차(9/14 월)가 1단원 23단원으로 나감 → 17차부터 짝수회차=2단원·홀수회차=1단원. 17차(9/18 금)=24단원 26문항, 18차(월)=25,26단원
