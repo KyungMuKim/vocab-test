@@ -253,7 +253,7 @@ function autoGrade(ko, ans){
   return { correct:false, review: parts.join("").length>=2 };
 }
 
-/* ===== 한→영 채점 (2026-09-22): 철자 비교. 5글자 이상에서 한 글자 오타는 정답+감수 ===== */
+/* ===== 한→영·영영 채점 (2026-09-22): 철자 비교. 2026-11-24부터 철자 엄격 — 오타는 전부 오답 ===== */
 const normEn = s => (s||"").normalize("NFC").toLowerCase().replace(/[^a-z0-9]/g,"");
 function lev(a,b){
   const m=a.length, n=b.length; if(!m||!n) return Math.max(m,n);
@@ -284,8 +284,8 @@ function autoGradeEn(en, ans, ko){
   const d = lev(a,t);
   /* 글자 수가 다른 한 글자 차이(빠짐·중복)만 정답+감수. 같은 길이의 한 글자 치환은
      depart/deport, tense/dense처럼 다른 단어일 수 있으므로 오답 + 감수 대상. */
-  if(t.length >= 5 && d === 1 && a.length !== t.length) return { correct:true, review:true };
-  return { correct:false, review: d <= 2 };
+  /* 철자 엄격 채점(2026-11-24 Dean): 한 글자라도 틀리면 오답 확정 — 정답 처리도, 감수 이관도 하지 않음(감수에서 '경미한 오타'로 뒤집히지 않게). */
+  return { correct:false, review:false };
 }
 /* 문장 빈칸 채점(2026-10-09): 철자 그대로면 정답. 5글자 이상에서 글자 수가 다른 한 글자 차이는 정답+감수.
    그 밖에 무언가 쓴 답은 오답+감수(어형 차이·문맥상 다른 단어는 선생님 판단) */
