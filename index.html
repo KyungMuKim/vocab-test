@@ -183,7 +183,11 @@ const CONFIG = {
      출제 순서: ① 직전에 틀린 내신 단어(많이 틀린 순) → ② 아직 안 나온 학교 제공 단어 → ③ 아직 안 나온 나머지(랜덤) → ④ 맞힌 단어(오래된 순).
      untilBySchool(학교 시험 마지막 날, KST)을 넘기면 그 학교 학생은 자동으로 아래 REVIEW_ONLY_FROM(복습만)으로 돌아감. 끄는 법: active:false.
      내신 단어(unit >= 940)는 능률보카 SR/복습풀에 섞이지 않음. */
-  EXAM_EE: { active: true, fromKST: "2026-11-20", cap: 60, reviewMax: 20, hintChars: 1,
+  /* (2026-11-26, Dean) 능률보카 복습 제외(reviewMax 0). 한 시험 = 내신 영영 newCount(40)문항 + 내신 오답풀(직전에 틀린 내신 단어, 영영 그대로, 합산 cap 60까지 — 넘치면 다음 회차로).
+     내신 오답풀은 복습 칸(item_type "wrong")으로 저장 → 신규 점수와 따로 집계.
+     handoutOnly 학교는 naesin_ee.json의 hs(유인물 단어장에 실린 학교 목록)에 그 학교가 있는 단어만 출제하고, 신규 문항 수를 풀 크기에 연동(newCountByPool: 풀÷div, min~max).
+     ds:{학교:정의} = 그 학교 유인물의 영영풀이(같은 단원을 쓰는 다른 학교에는 안 보임) → '학교 제공' 표시. */
+  EXAM_EE: { active: true, fromKST: "2026-11-20", cap: 60, reviewMax: 0, newCount: 40, wrongPool: true, handoutOnly: ["광명","목동","신남"], newCountByPool: { div: 3, min: 20, max: 30 }, hintChars: 1,
     schoolByName: { "김규현":"신서", "이은솔":"신서", "주현우":"신서", "엄선우":"목일", "황서율":"목일", "이민정":"목일", "강준호":"신남", "박서진":"목동", "신예지":"광명", "홍서연":"광명" },
     unitsBySchool: { "신서":[963,964], "목일":[947,948], "신남":[957,958], "목동":[956,957,958], "광명":[965,966,967,968] },
     untilBySchool: { "신서":"2026-12-17", "목일":"2026-12-09", "신남":"2026-12-09", "목동":"2026-12-11", "광명":"2026-12-09" } },
@@ -321,10 +325,12 @@ const stripEnHints = s => String(s||"")
 const koenPrompt = (test, q) => (q && q.def) ? q.def : (test && test.eedef && (CONFIG.EN_DEF||{})[q.en]) ? CONFIG.EN_DEF[q.en] : stripEnHints((q.ko||[]).join(" / "));
 const spBadge = q => (q && q.sp) ? '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">학교 제공</span>' : "";
 /* 기말 내신 영영 자료(naesin_ee.json): {units:{u:{name,school,roots,n}}, words:{"unit|en":{u,d(영영풀이),sp(학교 제공),m(뜻),s(예문),g(어근태그),e(어원),n(연상)}}} */
+/* 학교별 보기: ds[학교]가 있으면 그 학교 유인물 정의로 바꾸고 '학교 제공' 표시 */
+const eeView = (r, school) => { if(!r) return null; const x = school && (r.ds||{})[school]; return x ? { ...r, d: x, sp: 1 } : r; };
 let EE_DATA = null;
 async function loadEE(){
   if(EE_DATA) return EE_DATA;
-  try{ const r = await fetch("naesin_ee.json?v=20261120b"); EE_DATA = await r.json(); }
+  try{ const r = await fetch("naesin_ee.json?v=20261126b"); EE_DATA = await r.json(); }
   catch(e){ return { units:{}, words:{} }; }   // 실패 시 캐시하지 않음 — 다음 호출에 재시도. 문항은 한글 뜻 제시로 대체됨
   return EE_DATA;
 }
@@ -624,15 +630,16 @@ async function buildTest(student, hist){
   }
 
   let items = [];
-  let _eePool = null;
+  let _eePool = null, _eeWrong = null;
   if(_eeOn && newUnits.length){
     /* 전범위 풀: 같은 철자는 하나만(학교 제공 정의 우선 → 앞 단원 우선) */
     const _EE = await loadEE();
     const { data: _pw, error: _pe } = await sb.from("words").select("id,en,ko,unit").in("unit", newUnits).order("id");
     if(_pe) err(_pe);
-    const _rec = w => (_EE.words||{})[w.unit + "|" + w.en] || null;
+    const _rec = w => eeView((_EE.words||{})[w.unit + "|" + w.en], _eeSchool);
     const _by = {};
-    (_pw||[]).slice().sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || newUnits.indexOf(a.unit) - newUnits.indexOf(b.unit) || a.id - b.id)
+    const _hwOnly = (_ee.handoutOnly||[]).includes(_eeSchool);   // 학교 유인물 단어만(2026-11-26 Dean: 광명)
+    (_pw||[]).filter(w => !_hwOnly || ((_rec(w)||{}).hs||[]).includes(_eeSchool)).sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || newUnits.indexOf(a.unit) - newUnits.indexOf(b.unit) || a.id - b.id)
       .forEach(w => { const k = normEn(w.en); if(!_by[k]) _by[k] = w; });
     const _pool = Object.values(_by);
     /* 내신 단어별 이력(loadHistory는 내신 단어를 걸러내므로 rawItems에서 직접) */
@@ -641,12 +648,18 @@ async function buildTest(student, hist){
     (hist.rawItems||[]).filter(it => newUnits.includes(it.unit)).sort((x,y) => (_rO[x.attempt_id]-_rO[y.attempt_id]) || (x.seq-y.seq))
       .forEach(it => { const k = normEn(it.en); const w = _st[k] || (_st[k] = { n:0, miss:0, last:false, lastRound:0 }); w.n++; w.last = !!it.correct; if(!it.correct) w.miss++; w.lastRound = _rO[it.attempt_id]; });
     const _S = w => _st[normEn(w.en)];
-    const _nEE = Math.max(0, (_ee.cap || 60) - (_ee.reviewMax === undefined ? 20 : _ee.reviewMax));
+    const _ncp = _hwOnly ? _ee.newCountByPool : null;   // 유인물 학교: 풀 크기에 연동(2026-11-26 Dean, 20~30)
+    const _nEE = _ncp ? Math.max(_ncp.min, Math.min(_ncp.max, Math.round(_pool.length / _ncp.div))) : _ee.wrongPool ? (_ee.newCount || 40) : Math.max(0, (_ee.cap || 60) - (_ee.reviewMax === undefined ? 20 : _ee.reviewMax));
     const _wrong = _pool.filter(w => _S(w) && !_S(w).last).sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || _S(b).miss - _S(a).miss || a.id - b.id);   // 오답 중에서도 학교 제공 단어 먼저
     const _freshSp = shuffle(_pool.filter(w => !_S(w) && (_rec(w)||{}).sp));
     const _fresh = shuffle(_pool.filter(w => !_S(w) && !(_rec(w)||{}).sp));
     const _okd = shuffle(_pool.filter(w => _S(w) && _S(w).last)).sort((a,b) => _S(a).lastRound - _S(b).lastRound);
     const _mkE = w => { const r = _rec(w) || {}; return { word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new", def: r.d || "", sp: r.sp ? 1 : 0 }; };
+    if(_ee.wrongPool){
+      /* 40 + 내신 오답풀: 오답은 따로(복습 칸), 신규 칸은 안 나온 단어 → 맞힌 단어(오래된 순)로 newCount */
+      items = shuffle([..._freshSp, ..._fresh, ..._okd].slice(0, _nEE).map(_mkE));
+      _eeWrong = _wrong.slice(0, Math.max(0, (_ee.cap || 60) - items.length)).map(w => ({ ..._mkE(w), type:"wrong" }));
+    } else
     items = shuffle([..._wrong, ..._freshSp, ..._fresh, ..._okd].slice(0, _nEE).map(_mkE));
     _eePool = [..._wrong, ..._freshSp, ..._fresh, ..._okd].map(w => ({ word_id:w.id, en:w.en, unit:w.unit, type:"new", wrongEE: !!(_S(w) && !_S(w).last), seenEE: !!_S(w) }));
   } else
@@ -709,6 +722,7 @@ async function buildTest(student, hist){
     ].filter(Boolean));
   }
 
+  if(_eeWrong && _eeWrong.length) review = shuffle(_eeWrong).concat(review);   // 내신 오답풀(영영)
   if(!items.length && !review.length) return null;
   return { round, newUnits, items, review, exam: _exOn, examCrew: _exCrew, reviewOnly: _ro, koen: _koen, koenHint: (_eeOn ? (_ee.hintChars || 1) : (_km.hintChars || 1)), eedef: _eeOn || (_koen && _emExtra && !!_em.extraEnEn), ee: _eeOn, eeSchool: _eeSchool, eePool: _eePool };
 }
@@ -855,8 +869,10 @@ window.proceedStudent = async function(student, resume){
         const _nSp = test.items.filter(q => q.sp).length;
         head = `📘 <b>${test.round}회차 · 내신모드</b> (${classLabel(student.class_day)}) — 총 <b>${test.items.length + test.review.length}문항</b>`
              + `<br>📗 내신 영영풀이: ${unitNames(test.newUnits)} 전범위에서 <b>${test.items.length}문항</b>${_nSp ? ` <span class="small">(학교 제공 정의 ${_nSp}문항)</span>` : ""}`
-             + (test.review.length ? `<br>🔁 복습: 능률보카 ${test.review.length}문항 (${revParts})` : "")
-             + `<br><span class="small">내신 문항은 <b>영어 뜻풀이</b>를 읽고 맞는 <b>영어 단어</b>를 쓰면 돼요. <b>첫 글자는 힌트</b>로 보여 줘요. <b>학교 제공</b> 표시가 붙은 뜻풀이는 학교 유인물에 실린 그대로예요. 복습 문항은 지금까지처럼 뜻 쓰기예요.</span>`;
+             + (test.review.length ? (test.review.every(q => q.unit >= (CONFIG.EXAM_UNIT_MIN || 940))
+                 ? `<br>🔁 내신 오답: 지난 시험에서 틀린 내신 단어 <b>${test.review.length}문항</b> <span class="small">(같은 영영풀이 방식)</span>`
+                 : `<br>🔁 복습: 능률보카 ${test.review.length}문항 (${revParts})`) : "")
+             + `<br><span class="small">모든 문항은 <b>영어 뜻풀이</b>를 읽고 맞는 <b>영어 단어</b>를 쓰면 돼요. <b>첫 글자는 힌트</b>로 보여 줘요. 철자가 정확해야 정답이에요. <b>학교 제공</b> 표시가 붙은 뜻풀이는 학교 유인물에 실린 그대로예요.</span>`;
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
@@ -867,7 +883,7 @@ window.proceedStudent = async function(student, resume){
     body = `<div class="small" style="margin-bottom:6px">${recentNote}</div>${recentWarn}
       <div class="pill">${head}</div>
       <button class="btn-primary" onclick="startTest()">시험 시작</button>
-      <div class="row">${test.items.length && !test.diag && !test.cloze ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','new')">✨ 시험 전에 신규 단어 공부하기</button>` : ""}${test.review.some(r=>r.type==="wrong"||r.type==="sr") && !test.diagPlus ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','review')">📖 시험 전에 복습 단어 공부하기</button>` : ""}</div>
+      <div class="row">${test.items.length && !test.diag && !test.cloze ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','new')">✨ 시험 전에 신규 단어 공부하기</button>` : ""}${test.review.some(r=>(r.type==="wrong"||r.type==="sr") && !(r.unit >= (CONFIG.EXAM_UNIT_MIN || 940))) && !test.diagPlus ? `<button class="btn-ghost" style="flex:1" onclick="openStudy('${student.id}','pretest','review')">📖 시험 전에 복습 단어 공부하기</button>` : ""}</div>
       ${last ? `<div class="small" id="ptime" style="margin-top:6px"></div>` : ""}`;
   }
   app.innerHTML = `<div class="card"><h2>${esc(student.name)}</h2>${body}
@@ -1645,7 +1661,7 @@ window.openStudy = async function(studentId, src, kind){
   const newOK = test && !test.diag && !test.cloze && (test.items||[]).length;
   let targets = kind === "new"
     ? (newOK ? (test.ee && test.eePool ? test.eePool : test.items.map(q => ({ word_id:q.word_id, en:q.en, unit:q.unit, type:"new" }))) : [])
-    : ((test && test.review) || []).filter(r => r.type === "wrong" || r.type === "sr");
+    : ((test && test.review) || []).filter(r => (r.type === "wrong" || r.type === "sr") && !(r.unit >= (CONFIG.EXAM_UNIT_MIN || 940)));   // 내신 오답은 '내신 단어' 탭(틀린 단어 먼저)에서 공부
   const nRandom = ((test && test.review) || []).filter(r => r.type === "random").length;
   let mode = "next";
   if(kind === "new" && !targets.length){
@@ -1672,7 +1688,7 @@ window.openStudy = async function(studentId, src, kind){
 
   const cards = targets.map(t => {
     const h = hBy[t.word_id] || [];
-    const d = SD.words[t.unit + "|" + t.en] || null;
+    const d = eeView(SD.words[t.unit + "|" + t.en], test && test.eeSchool) || null;
     const cnt = {};
     h.filter(x => !x.ok && studyNorm(x.a)).forEach(x => { const k = studyNorm(x.a); (cnt[k] = cnt[k] || { a: String(x.a).trim(), n: 0 }).n++; });
     const top = Object.values(cnt).sort((a,b) => b.n - a.n)[0];
