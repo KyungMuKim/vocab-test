@@ -185,9 +185,10 @@ const CONFIG = {
      내신 단어(unit >= 940)는 능률보카 SR/복습풀에 섞이지 않음. */
   /* (2026-11-26, Dean) 능률보카 복습 제외(reviewMax 0). 한 시험 = 내신 영영 newCount(40)문항 + 내신 오답풀(직전에 틀린 내신 단어, 영영 그대로, 합산 cap 60까지 — 넘치면 다음 회차로).
      내신 오답풀은 복습 칸(item_type "wrong")으로 저장 → 신규 점수와 따로 집계.
-     handoutOnly 학교는 naesin_ee.json의 hs(유인물 단어장에 실린 학교 목록)에 그 학교가 있는 단어만 출제하고, 신규 문항 수를 풀 크기에 연동(newCountByPool: 풀÷div, min~max).
+     (2026-11-26 오전, Dean 최종) 유인물 단어(naesin_ee.json의 hs에 그 학교가 있는 단어) = 영영, 나머지 블루프린트 단어 = 한영(한글 뜻 → 영어).
+     신규 newCount(40) = 유인물 단어 우선(handoutFirst: 유인물 수÷div를 min~max로) + 모자란 만큼 블루프린트 단어. 유인물이 없는 학교는 40문항 전부 블루프린트(한영).
      ds:{학교:정의} = 그 학교 유인물의 영영풀이(같은 단원을 쓰는 다른 학교에는 안 보임) → '학교 제공' 표시. */
-  EXAM_EE: { active: true, fromKST: "2026-11-20", cap: 60, reviewMax: 0, newCount: 40, wrongPool: true, handoutOnly: ["광명","목동","신남"], newCountByPool: { div: 3, min: 20, max: 30 }, hintChars: 1,
+  EXAM_EE: { active: true, fromKST: "2026-11-20", cap: 60, reviewMax: 0, newCount: 40, wrongPool: true, handoutFirst: { div: 3, min: 20, max: 40 }, hintChars: 1,
     schoolByName: { "김규현":"신서", "이은솔":"신서", "주현우":"신서", "엄선우":"목일", "황서율":"목일", "이민정":"목일", "강준호":"신남", "박서진":"목동", "신예지":"광명", "홍서연":"광명" },
     unitsBySchool: { "신서":[963,964], "목일":[947,948], "신남":[957,958], "목동":[956,957,958], "광명":[965,966,967,968] },
     untilBySchool: { "신서":"2026-12-17", "목일":"2026-12-09", "신남":"2026-12-09", "목동":"2026-12-11", "광명":"2026-12-09" } },
@@ -330,7 +331,7 @@ const eeView = (r, school) => { if(!r) return null; const x = school && (r.ds||{
 let EE_DATA = null;
 async function loadEE(){
   if(EE_DATA) return EE_DATA;
-  try{ const r = await fetch("naesin_ee.json?v=20261126b"); EE_DATA = await r.json(); }
+  try{ const r = await fetch("naesin_ee.json?v=20261126c"); EE_DATA = await r.json(); }
   catch(e){ return { units:{}, words:{} }; }   // 실패 시 캐시하지 않음 — 다음 호출에 재시도. 문항은 한글 뜻 제시로 대체됨
   return EE_DATA;
 }
@@ -638,8 +639,8 @@ async function buildTest(student, hist){
     if(_pe) err(_pe);
     const _rec = w => eeView((_EE.words||{})[w.unit + "|" + w.en], _eeSchool);
     const _by = {};
-    const _hwOnly = (_ee.handoutOnly||[]).includes(_eeSchool);   // 학교 유인물 단어만(2026-11-26 Dean: 광명)
-    (_pw||[]).filter(w => !_hwOnly || ((_rec(w)||{}).hs||[]).includes(_eeSchool)).sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || newUnits.indexOf(a.unit) - newUnits.indexOf(b.unit) || a.id - b.id)
+    const _isH = w => ((_rec(w)||{}).hs||[]).includes(_eeSchool);   // 학교 유인물 단어장에 실린 단어
+    (_pw||[]).slice().sort((a,b) => (_isH(b)?1:0) - (_isH(a)?1:0) || ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || newUnits.indexOf(a.unit) - newUnits.indexOf(b.unit) || a.id - b.id)
       .forEach(w => { const k = normEn(w.en); if(!_by[k]) _by[k] = w; });
     const _pool = Object.values(_by);
     /* 내신 단어별 이력(loadHistory는 내신 단어를 걸러내므로 rawItems에서 직접) */
@@ -648,19 +649,22 @@ async function buildTest(student, hist){
     (hist.rawItems||[]).filter(it => newUnits.includes(it.unit)).sort((x,y) => (_rO[x.attempt_id]-_rO[y.attempt_id]) || (x.seq-y.seq))
       .forEach(it => { const k = normEn(it.en); const w = _st[k] || (_st[k] = { n:0, miss:0, last:false, lastRound:0 }); w.n++; w.last = !!it.correct; if(!it.correct) w.miss++; w.lastRound = _rO[it.attempt_id]; });
     const _S = w => _st[normEn(w.en)];
-    const _ncp = _hwOnly ? _ee.newCountByPool : null;   // 유인물 학교: 풀 크기에 연동(2026-11-26 Dean, 20~30)
-    const _nEE = _ncp ? Math.max(_ncp.min, Math.min(_ncp.max, Math.round(_pool.length / _ncp.div))) : _ee.wrongPool ? (_ee.newCount || 40) : Math.max(0, (_ee.cap || 60) - (_ee.reviewMax === undefined ? 20 : _ee.reviewMax));
-    const _wrong = _pool.filter(w => _S(w) && !_S(w).last).sort((a,b) => ((_rec(b)||{}).sp?1:0) - ((_rec(a)||{}).sp?1:0) || _S(b).miss - _S(a).miss || a.id - b.id);   // 오답 중에서도 학교 제공 단어 먼저
-    const _freshSp = shuffle(_pool.filter(w => !_S(w) && (_rec(w)||{}).sp));
-    const _fresh = shuffle(_pool.filter(w => !_S(w) && !(_rec(w)||{}).sp));
-    const _okd = shuffle(_pool.filter(w => _S(w) && _S(w).last)).sort((a,b) => _S(a).lastRound - _S(b).lastRound);
-    const _mkE = w => { const r = _rec(w) || {}; return { word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new", def: r.d || "", sp: r.sp ? 1 : 0 }; };
-    if(_ee.wrongPool){
-      /* 40 + 내신 오답풀: 오답은 따로(복습 칸), 신규 칸은 안 나온 단어 → 맞힌 단어(오래된 순)로 newCount */
-      items = shuffle([..._freshSp, ..._fresh, ..._okd].slice(0, _nEE).map(_mkE));
-      _eeWrong = _wrong.slice(0, Math.max(0, (_ee.cap || 60) - items.length)).map(w => ({ ..._mkE(w), type:"wrong" }));
-    } else
-    items = shuffle([..._wrong, ..._freshSp, ..._fresh, ..._okd].slice(0, _nEE).map(_mkE));
+    const _nEE = _ee.newCount || 40;
+    const _wrong = _pool.filter(w => _S(w) && !_S(w).last).sort((a,b) => (_isH(b)?1:0) - (_isH(a)?1:0) || _S(b).miss - _S(a).miss || a.id - b.id);   // 오답 중에서도 유인물 단어 먼저
+    /* 출제 순서(오답 제외): 안 나온 단어(학교 정의 있는 것 먼저) → 맞힌 단어(오래된 순) */
+    const _ord = ws => [...shuffle(ws.filter(w => !_S(w) && (_rec(w)||{}).sp)), ...shuffle(ws.filter(w => !_S(w) && !(_rec(w)||{}).sp)),
+                        ...shuffle(ws.filter(w => _S(w) && _S(w).last)).sort((a,b) => _S(a).lastRound - _S(b).lastRound)];
+    const _hAll = _pool.filter(_isH), _bAll = _pool.filter(w => !_isH(w));
+    const _hf = _ee.handoutFirst || { div:3, min:20, max:40 };
+    const _hQ = Math.min(_nEE, _hAll.length, Math.max(_hf.min, Math.min(_hf.max, Math.round(_hAll.length / _hf.div))));   // 유인물 우선 출제 수
+    const _hO = _ord(_hAll), _bO = _ord(_bAll);
+    const _pickH = _hO.slice(0, _hQ), _pickB = _bO.slice(0, _nEE - _pickH.length);
+    const _more = _hO.slice(_hQ, _hQ + Math.max(0, _nEE - _pickH.length - _pickB.length));   // 블루프린트가 모자라면 유인물로 채움
+    /* 유인물 단어 = 영영(def), 블루프린트 단어 = 한영(def 없음 → 한글 뜻 제시) */
+    const _mkE = w => { const r = _rec(w) || {}, h = _isH(w); return { word_id:w.id, en:w.en, ko:w.ko, unit:w.unit, type:"new", def: h ? (r.d || "") : "", sp: h && r.sp ? 1 : 0, hw: h ? 1 : 0 }; };
+    items = shuffle([..._pickH, ..._more, ..._pickB].map(_mkE));
+    _eeWrong = _wrong.slice(0, Math.max(0, (_ee.cap || 60) - items.length)).map(w => ({ ..._mkE(w), type:"wrong" }));
+    const _freshSp = [], _fresh = _hO, _okd = _bO;
     _eePool = [..._wrong, ..._freshSp, ..._fresh, ..._okd].map(w => ({ word_id:w.id, en:w.en, unit:w.unit, type:"new", wrongEE: !!(_S(w) && !_S(w).last), seenEE: !!_S(w) }));
   } else
   if(newUnits.length){
@@ -866,13 +870,13 @@ window.proceedStudent = async function(student, resume){
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 이번 회차는 <b>신규 없이 복습만</b> ${test.review.length}문항 (${revParts})`
              + `<br><span class="small">시험기간이라 문법에 집중하는 기간이에요. 지금까지 틀린 단어에서만 나옵니다.</span>`;
       } else if(test.ee){
-        const _nSp = test.items.filter(q => q.sp).length;
+        const _nH = test.items.filter(q => q.def).length;
         head = `📘 <b>${test.round}회차 · 내신모드</b> (${classLabel(student.class_day)}) — 총 <b>${test.items.length + test.review.length}문항</b>`
-             + `<br>📗 내신 영영풀이: ${unitNames(test.newUnits)} 전범위에서 <b>${test.items.length}문항</b>${_nSp ? ` <span class="small">(학교 제공 정의 ${_nSp}문항)</span>` : ""}`
+             + `<br>📗 내신 단어: ${unitNames(test.newUnits)}에서 <b>${test.items.length}문항</b> <span class="small">(${[_nH ? "학교 유인물 단어 영영풀이 " + _nH + "문항" : "", (test.items.length - _nH) ? "교과서 단어 한→영 " + (test.items.length - _nH) + "문항" : ""].filter(Boolean).join(" + ")})</span>`
              + (test.review.length ? (test.review.every(q => q.unit >= (CONFIG.EXAM_UNIT_MIN || 940))
-                 ? `<br>🔁 내신 오답: 지난 시험에서 틀린 내신 단어 <b>${test.review.length}문항</b> <span class="small">(같은 영영풀이 방식)</span>`
+                 ? `<br>🔁 내신 오답: 지난 시험에서 틀린 내신 단어 <b>${test.review.length}문항</b> <span class="small">(처음 나왔을 때와 같은 방식)</span>`
                  : `<br>🔁 복습: 능률보카 ${test.review.length}문항 (${revParts})`) : "")
-             + `<br><span class="small">모든 문항은 <b>영어 뜻풀이</b>를 읽고 맞는 <b>영어 단어</b>를 쓰면 돼요. <b>첫 글자는 힌트</b>로 보여 줘요. 철자가 정확해야 정답이에요. <b>학교 제공</b> 표시가 붙은 뜻풀이는 학교 유인물에 실린 그대로예요.</span>`;
+             + `<br><span class="small"><b>영어 뜻풀이</b> 또는 <b>한글 뜻</b>을 읽고 맞는 <b>영어 단어</b>를 쓰면 돼요. <b>첫 글자는 힌트</b>로 보여 줘요. 철자가 정확해야 정답이에요. <b>학교 제공</b> 표시가 붙은 뜻풀이는 학교 유인물에 실린 그대로예요.</span>`;
       } else {
         head = `📘 <b>${tag}</b> (${classLabel(student.class_day)}) — 신규: ${unitNames(test.newUnits)} (${test.items.length}문항)`
              + (test.review.length ? `<br>🔁 복습: ${test.review.length}문항 (${revParts})${test.round===1?'<br><span class="small">진단고사에서 틀린 단어가 모두 나와요.</span>':''}` : "<br>이번 회차는 복습 문항이 없어요")
